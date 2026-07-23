@@ -1,0 +1,39 @@
+.subscription-plans {
+  margin: 8px 0 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.subscription-plans-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--eh-on-surface);
+}
+
+.subscription-plans-sub {
+  margin: 6px 0 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--eh-on-surface-variant);
+}
+
+.subscription-plans-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subscription-plans-actions ion-button {
+  --border-radius: 12px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.subscription-plans-error {
+  margin: 10px 0 0;
+  font-size: 13px;
+}

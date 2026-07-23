@@ -1,0 +1,20 @@
+# Elastic Beanstalk upload filter (overrides .gitignore for `eb deploy`).
+# Everything NOT listed here is uploaded — including the prebuilt `dist/`.
+# Run `npm run build` before `eb deploy`.
+
+# Installed on the instance from package-lock.json
+node_modules
+
+# TypeScript sources / build config (we ship the compiled dist/)
+src
+tsconfig.json
+
+# Local secrets & runtime data (set env vars via `eb setenv` / console)
+.env
+.env.*
+data
+
+# EB CLI local state & logs
+.elasticbeanstalk
+*.log
+npm-debug.log*

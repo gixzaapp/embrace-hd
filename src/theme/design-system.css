@@ -1,0 +1,118 @@
+/* Shared Stitch utilities */
+
+.glass-card {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glow-primary {
+  box-shadow: 0 0 20px rgba(75, 226, 119, 0.4);
+}
+
+.glow-text {
+  text-shadow: 0 0 10px rgba(75, 226, 119, 0.5);
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.font-label-sm {
+  font-family: var(--eh-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.05em;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.material-symbols-outlined.filled {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* App chrome: ads above tab bar */
+.app-shell {
+  position: relative;
+  height: 100%;
+}
+
+.app-shell--auth-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--eh-background);
+}
+
+.app-ad-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--eh-tab-bar-height) + env(safe-area-inset-bottom, 0px));
+  z-index: 10000;
+  height: var(--eh-ad-height);
+  pointer-events: none;
+}
+
+.app-ad-footer .bottom-banner-ad {
+  pointer-events: auto;
+}
+
+ion-tab-bar.app-tab-bar {
+  --background: rgba(11, 19, 38, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px 12px 0 0;
+  height: var(--eh-tab-bar-height);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+}
+
+ion-tab-bar.app-tab-bar.app-tab-bar--with-ads {
+  /* Native AdMob sits above tabs via banner margin */
+}
+
+ion-tab-button.app-tab-button {
+  --color: rgba(188, 203, 185, 0.55);
+  --color-selected: var(--eh-primary);
+  font-family: var(--eh-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+
+ion-tab-button.app-tab-button.tab-selected {
+  background: rgba(75, 226, 119, 0.1);
+  border-radius: 12px;
+  margin: 6px 4px;
+}
+
+ion-toast.eh-toast {
+  --background: var(--eh-surface-high);
+  --color: var(--eh-on-surface);
+  --border-radius: 12px;
+  --box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}

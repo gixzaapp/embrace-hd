@@ -1,2 +1,126 @@
-/* For information on how to create your own theme, please refer to:
-http://ionicframework.com/docs/theming/ */
+/* Embrace HD — Stitch “Technical Power” design tokens */
+:root {
+  --eh-surface: #0b1326;
+  --eh-surface-dim: #0b1326;
+  --eh-surface-bright: #31394d;
+  --eh-surface-lowest: #060e20;
+  --eh-surface-low: #131b2e;
+  --eh-surface-container: #171f33;
+  --eh-surface-high: #222a3d;
+  --eh-surface-highest: #2d3449;
+  --eh-on-surface: #dae2fd;
+  --eh-on-surface-variant: #bccbb9;
+  --eh-outline: #869585;
+  --eh-outline-variant: #3d4a3d;
+  --eh-primary: #4be277;
+  --eh-on-primary: #003915;
+  --eh-primary-container: #22c55e;
+  --eh-secondary: #4cd7f6;
+  --eh-on-secondary: #003640;
+  --eh-tertiary: #50dfa4;
+  --eh-error: #ffb4ab;
+  --eh-background: #0b1326;
+  --eh-space-navy: #020617;
+
+  --eh-font: 'Inter', system-ui, sans-serif;
+  --eh-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --eh-radius-sm: 0.25rem;
+  --eh-radius: 0.5rem;
+  --eh-radius-md: 0.75rem;
+  --eh-radius-lg: 1rem;
+  --eh-radius-xl: 1.5rem;
+  --eh-radius-full: 9999px;
+
+  --eh-pad: 20px;
+  --eh-stack: 16px;
+  --eh-tab-bar-height: 64px;
+  --eh-ad-height: 56px;
+
+  --ion-font-family: var(--eh-font);
+
+  --ion-color-primary: #4be277;
+  --ion-color-primary-rgb: 75, 226, 119;
+  --ion-color-primary-contrast: #003915;
+  --ion-color-primary-contrast-rgb: 0, 57, 21;
+  --ion-color-primary-shade: #42c769;
+  --ion-color-primary-tint: #5de585;
+
+  --ion-color-secondary: #4cd7f6;
+  --ion-color-secondary-rgb: 76, 215, 246;
+  --ion-color-secondary-contrast: #003640;
+  --ion-color-secondary-contrast-rgb: 0, 54, 64;
+  --ion-color-secondary-shade: #43bdd8;
+  --ion-color-secondary-tint: #5edbf7;
+
+  --ion-color-tertiary: #50dfa4;
+  --ion-color-tertiary-rgb: 80, 223, 164;
+  --ion-color-tertiary-contrast: #003824;
+  --ion-color-tertiary-contrast-rgb: 0, 56, 36;
+  --ion-color-tertiary-shade: #46c490;
+  --ion-color-tertiary-tint: #62e2ad;
+
+  --ion-color-success: #4be277;
+  --ion-color-success-rgb: 75, 226, 119;
+  --ion-color-success-contrast: #003915;
+  --ion-color-success-contrast-rgb: 0, 57, 21;
+  --ion-color-success-shade: #42c769;
+  --ion-color-success-tint: #5de585;
+
+  --ion-color-warning: #fbbf24;
+  --ion-color-warning-rgb: 251, 191, 36;
+  --ion-color-warning-contrast: #1a1400;
+  --ion-color-warning-contrast-rgb: 26, 20, 0;
+  --ion-color-warning-shade: #dda820;
+  --ion-color-warning-tint: #fbc53a;
+
+  --ion-color-danger: #ffb4ab;
+  --ion-color-danger-rgb: 255, 180, 171;
+  --ion-color-danger-contrast: #690005;
+  --ion-color-danger-contrast-rgb: 105, 0, 5;
+  --ion-color-danger-shade: #e09e96;
+  --ion-color-danger-tint: #ffbcb3;
+
+  --ion-color-dark: #060e20;
+  --ion-color-dark-rgb: 6, 14, 32;
+  --ion-color-dark-contrast: #dae2fd;
+  --ion-color-dark-contrast-rgb: 218, 226, 253;
+  --ion-color-dark-shade: #050c1c;
+  --ion-color-dark-tint: #1f2636;
+
+  --ion-color-medium: #869585;
+  --ion-color-medium-rgb: 134, 149, 133;
+  --ion-color-medium-contrast: #0b1326;
+  --ion-color-medium-contrast-rgb: 11, 19, 38;
+  --ion-color-medium-shade: #768375;
+  --ion-color-medium-tint: #92a091;
+
+  --ion-color-light: #2d3449;
+  --ion-color-light-rgb: 45, 52, 73;
+  --ion-color-light-contrast: #dae2fd;
+  --ion-color-light-contrast-rgb: 218, 226, 253;
+  --ion-color-light-shade: #282e40;
+  --ion-color-light-tint: #42485b;
+
+  --ion-background-color: var(--eh-background);
+  --ion-background-color-rgb: 11, 19, 38;
+  --ion-text-color: var(--eh-on-surface);
+  --ion-text-color-rgb: 218, 226, 253;
+
+  --ion-toolbar-background: rgba(11, 19, 38, 0.7);
+  --ion-toolbar-color: var(--eh-on-surface);
+  --ion-tab-bar-background: rgba(11, 19, 38, 0.8);
+  --ion-tab-bar-color: rgba(188, 203, 185, 0.6);
+  --ion-tab-bar-color-selected: var(--eh-primary);
+
+  --ion-item-background: var(--eh-surface-container);
+  --ion-card-background: rgba(30, 41, 59, 0.7);
+
+  --ion-border-color: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  background: var(--eh-background);
+  color: var(--eh-on-surface);
+  font-family: var(--eh-font);
+}

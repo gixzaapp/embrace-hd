@@ -1,0 +1,146 @@
+diff --git a/node_modules/@whiteguru/capacitor-plugin-video-editor/android/src/main/java/com/whiteguru/capacitor/plugin/videoeditor/VideoEditorLitr.java b/node_modules/@whiteguru/capacitor-plugin-video-editor/android/src/main/java/com/whiteguru/capacitor/plugin/videoeditor/VideoEditorLitr.java
+index 17c153d..b0e92c7 100644
+--- a/node_modules/@whiteguru/capacitor-plugin-video-editor/android/src/main/java/com/whiteguru/capacitor/plugin/videoeditor/VideoEditorLitr.java
++++ b/node_modules/@whiteguru/capacitor-plugin-video-editor/android/src/main/java/com/whiteguru/capacitor/plugin/videoeditor/VideoEditorLitr.java
+@@ -28,16 +28,15 @@ import java.util.UUID;
+ 
+ public class VideoEditorLitr {
+ 
+-    static final int DEFAULT_VIDEO_KEY_FRAME_INTERVAL = 5;
+-    static final int DEFAULT_AUDIO_BITRATE = 128000;
++    static final int DEFAULT_VIDEO_KEY_FRAME_INTERVAL = 1;
++    static final int DEFAULT_AUDIO_BITRATE = 192000;
+     static final int DEFAULT_AUDIO_CHANNEL_COUNT = 2;
+     static final int DEFAULT_AUDIO_SAMPLE_RATE = 44100;
+     static final String DEFAULT_AUDIO_MIME = "audio/mp4a-latm";
+ 
+-    // For AVC this should be a reasonable default.
+-    // https://stackoverflow.com/a/5220554/4288782
++    // Very high quality estimate for when re-encode is unavoidable
+     public static long estimateVideoBitRate(int width, int height, int frameRate) {
+-        return (long) (0.07F * 2 * width * height * frameRate);
++        return (long) (0.2F * 2 * width * height * frameRate);
+     }
+ 
+     /** Returns audio bitrate in bits/sec if available, otherwise DEFAULT_AUDIO_BITRATE. */
+@@ -51,7 +50,7 @@ public class VideoEditorLitr {
+                 String mime = format.getString(MediaFormat.KEY_MIME);
+                 if (mime != null && mime.startsWith("audio/")) {
+                     if (format.containsKey(MediaFormat.KEY_BIT_RATE)) {
+-                        return Math.min(DEFAULT_AUDIO_BITRATE, format.getInteger(MediaFormat.KEY_BIT_RATE)); // bps
++                        return Math.max(DEFAULT_AUDIO_BITRATE, format.getInteger(MediaFormat.KEY_BIT_RATE)); // bps
+                     }
+                     return DEFAULT_AUDIO_BITRATE; // not reported (common for some VBR / containers)
+                 }
+@@ -76,21 +75,12 @@ public class VideoEditorLitr {
+         Uri sourceVideoUri = Uri.fromFile(srcFile);
+         String targetVideoFilePath = outFile.getPath();
+         SourceMedia sourceMedia = new SourceMedia(context, sourceVideoUri);
+-        // Resolution
+         List<VideoTrackFormat> videoTracks = sourceMedia.getVideoTracks();
+         if (videoTracks.size() == 0) {
+             throw new IOException("Video track not found");
+         }
+-        VideoSize targetVideoSize = calculateTargetVideoSize(videoTracks.get(0), transcodeSettings);
+-        Logger.debug("Source video size: " + (new VideoSize(videoTracks.get(0).width, videoTracks.get(0).height)));
+-        Logger.debug("Target video size: " + targetVideoSize);
+-        int estimatedVideoBitrate = (int) estimateVideoBitRate(targetVideoSize.width, targetVideoSize.height, transcodeSettings.getFps());
+-        int originalVideoBitrate = videoTracks.get(0).bitrate;
+ 
+-        int targetVideoBitrate = Math.min(estimatedVideoBitrate, originalVideoBitrate);
+-        int targetAudioBitrate = getTargetAudioBitrate(context, sourceVideoUri);
+-
+-        // Trim
++        // Trim range (µs)
+         long startsAtUs = trimSettings.getStartsAt() * 1000;
+         long endsAtUs = trimSettings.getEndsAt() == 0 ? Long.MAX_VALUE : trimSettings.getEndsAt() * 1000;
+ 
+@@ -100,22 +90,72 @@ public class VideoEditorLitr {
+             .setRemoveMetadata(true)
+             .build();
+ 
+-        // Video codec config
+-        MediaFormat targetVideoFormat = new MediaFormat();
+-        targetVideoFormat.setString(MediaFormat.KEY_MIME, "video/avc");
+-        targetVideoFormat.setInteger(MediaFormat.KEY_WIDTH, targetVideoSize.width);
+-        targetVideoFormat.setInteger(MediaFormat.KEY_HEIGHT, targetVideoSize.height);
+-        targetVideoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, transcodeSettings.getFps());
+-        targetVideoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, DEFAULT_VIDEO_KEY_FRAME_INTERVAL);
+-        targetVideoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+-        targetVideoFormat.setInteger(MediaFormat.KEY_BIT_RATE, targetVideoBitrate);
+-
+-        // Audio codec config
+-        MediaFormat targetAudioFormat = new MediaFormat();
+-        targetAudioFormat.setString(MediaFormat.KEY_MIME, DEFAULT_AUDIO_MIME);
+-        targetAudioFormat.setInteger(MediaFormat.KEY_CHANNEL_COUNT, DEFAULT_AUDIO_CHANNEL_COUNT);
+-        targetAudioFormat.setInteger(MediaFormat.KEY_SAMPLE_RATE, DEFAULT_AUDIO_SAMPLE_RATE);
+-        targetAudioFormat.setInteger(MediaFormat.KEY_BIT_RATE, targetAudioBitrate);
++        // width/height both 0 → stream copy (remux/trim only) — preserves source quality
++        boolean remuxOnly = transcodeSettings.getWidth() <= 0 && transcodeSettings.getHeight() <= 0;
++
++        MediaFormat targetVideoFormat = null;
++        MediaFormat targetAudioFormat = null;
++
++        if (!remuxOnly) {
++            VideoSize targetVideoSize = calculateTargetVideoSize(videoTracks.get(0), transcodeSettings);
++            Logger.debug("Source video size: " + (new VideoSize(videoTracks.get(0).width, videoTracks.get(0).height)));
++            Logger.debug("Target video size: " + targetVideoSize);
++
++            int estimatedVideoBitrate = (int) estimateVideoBitRate(
++                targetVideoSize.width,
++                targetVideoSize.height,
++                transcodeSettings.getFps()
++            );
++            int originalVideoBitrate = videoTracks.get(0).bitrate;
++            int targetVideoBitrate =
++                originalVideoBitrate > 0
++                    ? Math.max(estimatedVideoBitrate, originalVideoBitrate)
++                    : estimatedVideoBitrate;
++
++            // Hard floor so MediaCodec never under-encodes HD status exports
++            int minFloor = Math.max(targetVideoSize.width, targetVideoSize.height) >= 1080
++                ? 16_000_000
++                : 10_000_000;
++            targetVideoBitrate = Math.max(targetVideoBitrate, minFloor);
++            targetVideoBitrate = Math.min(targetVideoBitrate, 25_000_000);
++
++            int targetAudioBitrate = getTargetAudioBitrate(context, sourceVideoUri);
++
++            targetVideoFormat = new MediaFormat();
++            targetVideoFormat.setString(MediaFormat.KEY_MIME, "video/avc");
++            targetVideoFormat.setInteger(MediaFormat.KEY_WIDTH, targetVideoSize.width);
++            targetVideoFormat.setInteger(MediaFormat.KEY_HEIGHT, targetVideoSize.height);
++            targetVideoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, Math.max(30, transcodeSettings.getFps()));
++            targetVideoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, DEFAULT_VIDEO_KEY_FRAME_INTERVAL);
++            targetVideoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
++            targetVideoFormat.setInteger(MediaFormat.KEY_BIT_RATE, targetVideoBitrate);
++            targetVideoFormat.setInteger(
++                MediaFormat.KEY_PROFILE,
++                MediaCodecInfo.CodecProfileLevel.AVCProfileHigh
++            );
++            targetVideoFormat.setInteger(
++                MediaFormat.KEY_LEVEL,
++                MediaCodecInfo.CodecProfileLevel.AVCLevel4
++            );
++            try {
++                targetVideoFormat.setInteger(
++                    MediaFormat.KEY_BITRATE_MODE,
++                    MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
++                );
++            } catch (Exception ignored) {
++                // Older API levels may not honor bitrate mode
++            }
++
++            targetAudioFormat = new MediaFormat();
++            targetAudioFormat.setString(MediaFormat.KEY_MIME, DEFAULT_AUDIO_MIME);
++            targetAudioFormat.setInteger(MediaFormat.KEY_CHANNEL_COUNT, DEFAULT_AUDIO_CHANNEL_COUNT);
++            targetAudioFormat.setInteger(MediaFormat.KEY_SAMPLE_RATE, DEFAULT_AUDIO_SAMPLE_RATE);
++            targetAudioFormat.setInteger(MediaFormat.KEY_BIT_RATE, targetAudioBitrate);
++
++            Logger.debug("Target video bitrate: " + targetVideoBitrate);
++        } else {
++            Logger.debug("Remux/trim only — preserving source video/audio streams");
++        }
+ 
+         TransformationListener listener = new TransformationListener() {
+             @Override

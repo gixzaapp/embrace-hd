@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log*
+dist
+build
+data
+.env
+.env.*
+!.env.example
+.git
+.ebextensions
+.platform
+.elasticbeanstalk
+*.md
+scripts/package-eb.mjs
+scripts/create-ddb-table.mjs

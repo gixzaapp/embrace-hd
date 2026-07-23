@@ -1,0 +1,57 @@
+{
+  "test-device-1": {
+    "deviceId": "test-device-1",
+    "startDateIso": "2026-07-12T20:25:13.510Z",
+    "claimedAt": "2026-07-12T20:25:13.510Z"
+  },
+  "b62cd271-2ca4-4196-b3d6-57b4c984be2f": {
+    "deviceId": "b62cd271-2ca4-4196-b3d6-57b4c984be2f",
+    "startDateIso": "2026-07-12T21:53:29.271Z",
+    "claimedAt": "2026-07-12T21:53:29.271Z"
+  },
+  "72fc8a40-191d-4218-8a92-4aa4f28519e8": {
+    "deviceId": "72fc8a40-191d-4218-8a92-4aa4f28519e8",
+    "startDateIso": "2026-07-12T22:33:19.897Z",
+    "claimedAt": "2026-07-12T22:33:19.897Z"
+  },
+  "8d9c864f-1f14-4376-ace8-3934d1c6fd78": {
+    "deviceId": "8d9c864f-1f14-4376-ace8-3934d1c6fd78",
+    "startDateIso": "2026-07-12T22:41:35.953Z",
+    "claimedAt": "2026-07-12T22:41:35.953Z"
+  },
+  "c2d84a80-721b-43b4-8e77-8d9d0cb4b6ef": {
+    "deviceId": "c2d84a80-721b-43b4-8e77-8d9d0cb4b6ef",
+    "startDateIso": "2026-07-12T22:50:41.635Z",
+    "claimedAt": "2026-07-12T22:50:41.635Z"
+  },
+  "5593a9c0-e087-4da8-8172-5946f7e44a41": {
+    "deviceId": "5593a9c0-e087-4da8-8172-5946f7e44a41",
+    "startDateIso": "2026-07-12T23:10:04.938Z",
+    "claimedAt": "2026-07-12T23:10:04.938Z"
+  },
+  "238720a7-fe2b-4173-81fd-06208c2d4d9e": {
+    "deviceId": "238720a7-fe2b-4173-81fd-06208c2d4d9e",
+    "startDateIso": "2026-07-12T23:18:04.537Z",
+    "claimedAt": "2026-07-12T23:18:04.537Z"
+  },
+  "560122fa-0a86-459e-931d-2644b9ae05f9": {
+    "deviceId": "560122fa-0a86-459e-931d-2644b9ae05f9",
+    "startDateIso": "2026-07-12T23:29:47.962Z",
+    "claimedAt": "2026-07-12T23:29:47.962Z"
+  },
+  "58e6924f-5ae1-4669-a3d3-05bcb441ebde": {
+    "deviceId": "58e6924f-5ae1-4669-a3d3-05bcb441ebde",
+    "startDateIso": "2026-07-12T23:32:02.050Z",
+    "claimedAt": "2026-07-12T23:32:02.050Z"
+  },
+  "0c216981-27ab-49db-a707-055cf61f568c": {
+    "deviceId": "0c216981-27ab-49db-a707-055cf61f568c",
+    "startDateIso": "2026-07-15T00:14:47.493Z",
+    "claimedAt": "2026-07-15T00:14:47.493Z"
+  },
+  "02a24d4f-47e2-44e0-9be4-b6798ca936ee": {
+    "deviceId": "02a24d4f-47e2-44e0-9be4-b6798ca936ee",
+    "startDateIso": "2026-07-15T18:42:17.536Z",
+    "claimedAt": "2026-07-15T18:42:17.536Z"
+  }
+}

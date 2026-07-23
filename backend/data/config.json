@@ -1,0 +1,18 @@
+{
+  "appId": "com.embracehd.app",
+  "trialDurationDays": 7,
+  "adsEnabled": true,
+  "premiumEntitlementId": "premium",
+  "products": {
+    "monthly": "embrace_hd_monthly",
+    "yearly": "embrace_hd_yearly",
+    "lifetime": "embrace_hd_lifetime"
+  },
+  "featureFlags": {
+    "lifetimePlan": true,
+    "imageToVideo": false,
+    "nativeWatermark": false
+  },
+  "minAppVersion": "0.1.0",
+  "updatedAt": "2026-07-12T00:00:00.000Z"
+}

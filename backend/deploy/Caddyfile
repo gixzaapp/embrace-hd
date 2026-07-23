@@ -1,0 +1,27 @@
+# TLS via Let's Encrypt (Caddy). Set API_DOMAIN in .env / compose.
+# For local smoke-test without a real domain, use localhost (HTTP only on :80).
+
+{$API_DOMAIN:localhost} {
+	encode gzip zstd
+
+	# Large video uploads for /v1/export
+	request_body {
+		max_size 300MB
+	}
+
+	reverse_proxy api:8787 {
+		# Upload + encode can take a while; polling keeps the POST short,
+		# but downloads and slow clients still need headroom.
+		transport http {
+			dial_timeout 30s
+			response_header_timeout 10m
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
+
+	header {
+		# Helpful when debugging behind a proxy; CORS is still set by Express.
+		-Server
+	}
+}

@@ -1,0 +1,37 @@
+.bottom-banner-ad {
+  flex-shrink: 0;
+  width: 100%;
+  min-height: 50px;
+  height: 56px;
+  box-sizing: border-box;
+}
+
+.bottom-banner-ad--spacer {
+  pointer-events: none;
+}
+
+.bottom-banner-ad--web {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--eh-surface-low);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--eh-on-surface-variant);
+  font-size: 0.8rem;
+}
+
+.bottom-banner-ad-label {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--eh-outline);
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bottom-banner-ad-copy {
+  opacity: 0.9;
+}

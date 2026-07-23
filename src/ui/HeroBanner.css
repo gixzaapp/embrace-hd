@@ -1,0 +1,31 @@
+.hero-banner {
+  margin: 1rem 0;
+  padding: 1.5rem 1.25rem;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #0f766e 0%, #134e4a 55%, #042f2e 100%);
+  color: #ecfdf5;
+}
+
+.hero-eyebrow {
+  margin: 0 0 0.35rem;
+  color: rgba(236, 253, 245, 0.75);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.hero-title {
+  margin: 0;
+  color: #fff;
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.hero-subtitle {
+  margin: 0.55rem 0 0;
+  color: rgba(236, 253, 245, 0.9);
+  font-size: 0.98rem;
+  line-height: 1.4;
+}

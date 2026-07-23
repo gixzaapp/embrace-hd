@@ -1,0 +1,33 @@
+.home-content {
+  --background: var(--eh-background);
+}
+
+.home-content--with-ads {
+  --padding-bottom: calc(
+    var(--eh-tab-bar-height) + var(--eh-ad-height) + env(safe-area-inset-bottom, 0px) + 16px
+  );
+}
+
+.home-content:not(.home-content--with-ads) {
+  --padding-bottom: calc(var(--eh-tab-bar-height) + env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+.home-body {
+  padding: 24px var(--eh-pad) 32px;
+  max-width: 512px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.home-lock-note {
+  margin: -16px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(147, 0, 10, 0.25);
+  border: 1px solid rgba(255, 180, 171, 0.35);
+  color: var(--eh-error);
+  font-size: 13px;
+  line-height: 1.4;
+}

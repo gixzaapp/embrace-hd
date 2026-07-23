@@ -1,0 +1,61 @@
+# Embrace HD API — Hetzner / VPS (Docker Compose + Caddy)
+#
+# 1. Copy .env.example → .env and fill secrets
+# 2. Set API_DOMAIN in .env (e.g. api.embraceapp.co.uk)
+# 3. Point the domain's A record at this server
+# 4. docker compose up -d --build
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: embrace-hd-api:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "8787"
+      DATA_DIR: /data
+      # File storage is the right default on a single Hetzner VPS
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-file}
+    volumes:
+      - embrace_data:/data
+    expose:
+      - "8787"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  embrace_data:
+  caddy_data:
+  caddy_config:

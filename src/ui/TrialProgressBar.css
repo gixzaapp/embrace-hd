@@ -1,0 +1,72 @@
+.trial-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trial-progress-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.trial-progress-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--eh-on-surface-variant);
+  text-transform: uppercase;
+}
+
+.trial-progress-icon {
+  font-size: 14px !important;
+}
+
+.trial-progress-value {
+  color: var(--eh-primary);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.trial-progress-value--locked {
+  color: var(--eh-error);
+}
+
+.trial-progress-track {
+  height: 8px;
+  width: 100%;
+  border-radius: var(--eh-radius-full);
+  background: var(--eh-surface-container);
+  overflow: hidden;
+}
+
+.trial-progress-fill {
+  position: relative;
+  height: 100%;
+  border-radius: var(--eh-radius-full);
+  background: linear-gradient(90deg, var(--eh-secondary), var(--eh-primary));
+  min-width: 0;
+  transition: width 0.4s ease;
+}
+
+.trial-progress-fill--locked {
+  background: linear-gradient(90deg, #93000a, #ffb4ab);
+}
+
+.trial-progress-sheen {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.2);
+  animation: trial-pulse 2s ease-in-out infinite;
+}
+
+@keyframes trial-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}

@@ -1,0 +1,80 @@
+.convert-progress-modal {
+  --width: min(88vw, 380px);
+  --height: auto;
+  --border-radius: 18px;
+  --background: transparent;
+  --box-shadow: none;
+}
+
+.convert-progress-modal::part(content) {
+  width: var(--width);
+  max-width: var(--width);
+  height: auto;
+  margin: auto;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0b1326;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.convert-progress-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px 20px;
+  color: #e8eefc;
+}
+
+.convert-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.convert-progress-spinner {
+  --color: #14b8a6;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.convert-progress-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.convert-progress-status {
+  margin: 0;
+  font-size: 14px;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.convert-progress-pct {
+  font-size: 15px;
+  font-weight: 700;
+  color: #5eead4;
+  flex-shrink: 0;
+}
+
+.convert-progress-bar {
+  --background: rgba(148, 163, 184, 0.2);
+  --progress-background: #14b8a6;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.convert-progress-cancel {
+  margin: 0;
+  --border-radius: 10px;
+  --border-color: #334155;
+  --color: #e2e8f0;
+  font-weight: 600;
+}

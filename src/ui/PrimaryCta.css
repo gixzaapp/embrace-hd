@@ -1,0 +1,18 @@
+.primary-cta {
+  --background: var(--eh-primary);
+  --background-activated: var(--eh-primary-container);
+  --color: var(--eh-on-primary);
+  --border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 8px 0;
+}
+
+.hint-list {
+  margin: 12px 0 20px;
+  padding-left: 1.1rem;
+  color: var(--eh-on-surface-variant);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
