@@ -22,9 +22,10 @@ services:
       NODE_ENV: production
       PORT: "8787"
       DATA_DIR: /data
+      RUNNING_IN_DOCKER: "1"
       STORAGE_DRIVER: ${STORAGE_DRIVER:-postgres}
-      # Reach Postgres on the Hetzner host from inside the container
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      # Always reach Postgres on the Hetzner host (do not use .env localhost here)
+      DB_HOST: host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

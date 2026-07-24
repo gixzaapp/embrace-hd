@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -16,6 +17,20 @@ function parseStorageDriver(): 'file' | 'dynamodb' | 'postgres' {
   if (raw === 'dynamodb') return 'dynamodb';
   if (raw === 'postgres' || raw === 'postgresql') return 'postgres';
   return 'file';
+}
+
+/**
+ * Inside Docker, localhost/127.0.0.1 is the container — not the Hetzner host
+ * where Postgres usually listens. Remap to the Compose host gateway name.
+ */
+function resolveDbHost(): string {
+  const raw = process.env.DB_HOST?.trim() || 'localhost';
+  const inDocker =
+    process.env.RUNNING_IN_DOCKER === '1' || fs.existsSync('/.dockerenv');
+  if (inDocker && (raw === 'localhost' || raw === '127.0.0.1')) {
+    return 'host.docker.internal';
+  }
+  return raw;
 }
 
 export const env = {
@@ -63,7 +78,7 @@ export const env = {
   ddbTable: process.env.DDB_TABLE?.trim() || 'embrace-hd',
   ddbEndpoint: process.env.DDB_ENDPOINT?.trim() || '',
   /** PostgreSQL (when STORAGE_DRIVER=postgres) */
-  dbHost: process.env.DB_HOST?.trim() || 'localhost',
+  dbHost: resolveDbHost(),
   dbPort: Number(process.env.DB_PORT ?? 5432),
   dbName: process.env.DB_NAME?.trim() || 'embrace_hd_prod',
   dbUser: process.env.DB_USER?.trim() || 'embrace_app',
