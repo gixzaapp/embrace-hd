@@ -38,7 +38,9 @@ export async function createApp() {
     `[storage] driver=${env.storageDriver}` +
     (env.storageDriver === 'dynamodb'
       ? ` table=${env.ddbTable} region=${env.awsRegion}`
-      : ` dir=${env.dataDir}`);
+      : env.storageDriver === 'postgres'
+        ? ` ${env.dbUser}@${env.dbHost}:${env.dbPort}/${env.dbName}`
+        : ` dir=${env.dataDir}`);
   const probe = await checkStorage();
   if (probe.ok) {
     console.log(`${base} — reachable`);
@@ -73,7 +75,13 @@ export async function createApp() {
       storage:
         env.storageDriver === 'dynamodb'
           ? { driver: 'dynamodb', table: env.ddbTable, region: env.awsRegion }
-          : { driver: 'file' },
+          : env.storageDriver === 'postgres'
+            ? {
+                driver: 'postgres',
+                host: env.dbHost,
+                database: env.dbName,
+              }
+            : { driver: 'file' },
       requests: getRequestMetrics(),
     });
   });

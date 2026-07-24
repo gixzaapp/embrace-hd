@@ -40,7 +40,12 @@ Server listens on `http://localhost:8787` by default.
 | `AUTH_ALLOW_OTP_HINT` | When `true` (default), mock OTP responses may include `otpHint` for local testing. Set `false` in production. |
 | `AUTH_TEST_OTP` | Fixed OTP that always verifies (e.g. `123456`) — **testing only**, leave empty in production. |
 | `REQUEST_LOG_INTERVAL_SEC` | Request-count log interval in seconds (default `60`, `0` disables) |
-| `STORAGE_DRIVER` | `file` (local JSON — use on Hetzner) or `dynamodb` (AWS) |
+| `STORAGE_DRIVER` | `file` \| `dynamodb` \| `postgres` (use `postgres` on Hetzner) |
+| `DB_HOST` | Postgres host (`localhost` on host; `host.docker.internal` from Compose) |
+| `DB_PORT` | Postgres port (default `5432`) |
+| `DB_NAME` | Database name |
+| `DB_USER` | Database user |
+| `DB_PASSWORD` | Database password |
 | `AWS_REGION` | Region for DynamoDB (when using dynamodb) |
 | `DDB_TABLE` | DynamoDB table name (default `embrace-hd`) |
 | `DDB_ENDPOINT` | Optional custom endpoint (e.g. DynamoDB Local) |
@@ -139,15 +144,32 @@ When enabled, Convert uses **backend FFmpeg** first. If the API is unreachable, 
 
 ## Storage
 
-The structured data (users, OTPs, sessions, trials, config) goes through a
+The structured data (users, OTPs, sessions, trials, config, export jobs) goes through a
 pluggable storage layer selected by `STORAGE_DRIVER`:
 
-- **`file`** (default) — local JSON files, great for local dev. Per-instance and
-  ephemeral, so **not** suitable for a load-balanced / multi-instance environment.
-- **`dynamodb`** — Amazon DynamoDB, shared across all instances. Use this for the
-  highly-available setup.
+- **`postgres`** (recommended on Hetzner) — PostgreSQL; schema auto-migrates on boot
+- **`file`** — local JSON files (quick local dev)
+- **`dynamodb`** — Amazon DynamoDB (AWS only)
 
-The app logs the active driver at startup: `[storage] driver=... table=...`.
+The app logs the active driver at startup: `[storage] driver=...`.
+
+### Postgres driver
+
+Tables: `users`, `otps`, `sessions`, `trials`, `app_config`, `export_jobs`
+(see `src/storage/schema.sql`). Created automatically on startup.
+
+```bash
+STORAGE_DRIVER=postgres
+DB_HOST=localhost          # or host.docker.internal from Docker Compose
+DB_PORT=5432
+DB_NAME=embrace_hd_prod
+DB_USER=embrace_app
+DB_PASSWORD=***
+```
+
+If Postgres is on the Hetzner host and the API runs in Compose, use
+`DB_HOST=host.docker.internal` and allow the Docker bridge in `pg_hba.conf`
+(e.g. `host all all 172.16.0.0/12 scram-sha-256`). Video files still use `DATA_DIR`.
 
 ### File driver — data files
 - `data/config.json` — remote defaults
@@ -256,8 +278,12 @@ Set at least:
 |-----|-------|
 | `API_DOMAIN` | `api.embraceapp.co.uk` (must match DNS) |
 | `CORS_ORIGINS` | `*` or your app origins |
-| `STORAGE_DRIVER` | `file` |
-| `DATA_DIR` | left alone — Compose mounts `/data` |
+| `STORAGE_DRIVER` | `postgres` |
+| `DB_HOST` | `host.docker.internal` (Postgres on same host; Compose default) |
+| `DB_PORT` | `5432` |
+| `DB_NAME` | `embrace_hd_prod` |
+| `DB_USER` | `embrace_app` |
+| `DB_PASSWORD` | your DB password |
 | `AUTH_ALLOW_OTP_HINT` | `false` |
 | `AUTH_TEST_OTP` | empty |
 | `WHATSAPP_*` | your Cloud API credentials |
@@ -305,9 +331,9 @@ Data (users, sessions, OTPs, exports) lives in the Docker volume `embrace_data` 
 4. Terminate the EB environment when traffic is stable.
 
 **Notes**
-- Prefer `STORAGE_DRIVER=file` on one VPS. DynamoDB is optional and AWS-only.
+- Prefer `STORAGE_DRIVER=postgres` on Hetzner. Ensure Postgres allows Docker host connections (`host.docker.internal`).
 - Disk fills with exports over time — prune `data/exports` periodically or add a cron.
-- For backups: snapshot the Hetzner volume / copy the `embrace_data` volume.
+- For backups: dump Postgres (`pg_dump`) and/or snapshot the Hetzner volume.
 
 ## Deploy to AWS Elastic Beanstalk (optional / legacy)
 

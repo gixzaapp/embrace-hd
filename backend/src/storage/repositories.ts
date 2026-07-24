@@ -16,28 +16,46 @@ import {
   ddbQueryByGsi1,
   epochSeconds,
 } from './dynamo.js';
+import {
+  checkPostgres,
+  migratePostgres,
+  query,
+} from './postgres.js';
 
-const usingDynamo = env.storageDriver === 'dynamodb';
+const driver = env.storageDriver;
 
 /**
- * Lightweight connectivity/permission probe. For DynamoDB it does a single
- * GetItem on a dummy key (uses only the GetItem permission we already grant),
- * so a missing table or IAM policy surfaces immediately at boot.
+ * Boot-time connectivity probe + schema migrate for Postgres.
  */
 export async function checkStorage(): Promise<{
-  driver: 'file' | 'dynamodb';
+  driver: 'file' | 'dynamodb' | 'postgres';
   ok: boolean;
   detail?: string;
 }> {
-  if (!usingDynamo) return { driver: 'file', ok: true };
+  if (driver === 'file') return { driver: 'file', ok: true };
+
+  if (driver === 'dynamodb') {
+    try {
+      await ddbGet('HEALTH#probe', 'HEALTH');
+      return { driver: 'dynamodb', ok: true };
+    } catch (err) {
+      return {
+        driver: 'dynamodb',
+        ok: false,
+        detail: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+      };
+    }
+  }
+
   try {
-    await ddbGet('HEALTH#probe', 'HEALTH');
-    return { driver: 'dynamodb', ok: true };
+    await migratePostgres();
+    const probe = await checkPostgres();
+    return { driver: 'postgres', ...probe };
   } catch (err) {
     return {
-      driver: 'dynamodb',
+      driver: 'postgres',
       ok: false,
-      detail: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+      detail: err instanceof Error ? err.message : String(err),
     };
   }
 }
@@ -59,6 +77,27 @@ function toUser(item: Record<string, unknown> | AuthUser): AuthUser {
     deviceIds: u.deviceIds ?? [],
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
+  };
+}
+
+function mapUserRow(row: {
+  id: string;
+  phone_e164: string;
+  name: string | null;
+  device_ids: string[] | unknown;
+  created_at: Date | string;
+  updated_at: Date | string;
+}): AuthUser {
+  const deviceIds = Array.isArray(row.device_ids)
+    ? (row.device_ids as string[])
+    : [];
+  return {
+    id: row.id,
+    phoneE164: row.phone_e164,
+    name: row.name ?? undefined,
+    deviceIds,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
 
@@ -93,7 +132,44 @@ const dynamoUsersRepo = (): UsersRepo => ({
   },
 });
 
-export const usersRepo: UsersRepo = usingDynamo ? dynamoUsersRepo() : fileUsersRepo();
+const postgresUsersRepo = (): UsersRepo => ({
+  async getById(id) {
+    const { rows } = await query('SELECT * FROM users WHERE id = $1', [id]);
+    return rows[0] ? mapUserRow(rows[0] as Parameters<typeof mapUserRow>[0]) : null;
+  },
+  async findByPhone(phoneE164) {
+    const { rows } = await query('SELECT * FROM users WHERE phone_e164 = $1', [
+      phoneE164,
+    ]);
+    return rows[0] ? mapUserRow(rows[0] as Parameters<typeof mapUserRow>[0]) : null;
+  },
+  async put(user) {
+    await query(
+      `INSERT INTO users (id, phone_e164, name, device_ids, created_at, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+       ON CONFLICT (id) DO UPDATE SET
+         phone_e164 = EXCLUDED.phone_e164,
+         name = EXCLUDED.name,
+         device_ids = EXCLUDED.device_ids,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        user.id,
+        user.phoneE164,
+        user.name ?? null,
+        JSON.stringify(user.deviceIds ?? []),
+        user.createdAt,
+        user.updatedAt,
+      ]
+    );
+  },
+});
+
+export const usersRepo: UsersRepo =
+  driver === 'postgres'
+    ? postgresUsersRepo()
+    : driver === 'dynamodb'
+      ? dynamoUsersRepo()
+      : fileUsersRepo();
 
 /* ------------------------------ OTPs ------------------------------ */
 
@@ -101,6 +177,28 @@ export interface OtpsRepo {
   get(phoneE164: string): Promise<OtpRecord | null>;
   put(record: OtpRecord): Promise<void>;
   delete(phoneE164: string): Promise<void>;
+}
+
+function mapOtpRow(row: {
+  phone_e164: string;
+  code_hash: string;
+  mode: 'login' | 'register';
+  name: string | null;
+  device_id: string | null;
+  attempts: number;
+  expires_at: Date | string;
+  created_at: Date | string;
+}): OtpRecord {
+  return {
+    phoneE164: row.phone_e164,
+    codeHash: row.code_hash,
+    mode: row.mode,
+    name: row.name ?? undefined,
+    deviceId: row.device_id ?? undefined,
+    attempts: row.attempts,
+    expiresAt: new Date(row.expires_at).toISOString(),
+    createdAt: new Date(row.created_at).toISOString(),
+  };
 }
 
 const fileOtpsRepo = (): OtpsRepo => {
@@ -125,7 +223,48 @@ const dynamoOtpsRepo = (): OtpsRepo => ({
   delete: (phone) => ddbDelete(`OTP#${phone}`, 'OTP'),
 });
 
-export const otpsRepo: OtpsRepo = usingDynamo ? dynamoOtpsRepo() : fileOtpsRepo();
+const postgresOtpsRepo = (): OtpsRepo => ({
+  async get(phoneE164) {
+    const { rows } = await query('SELECT * FROM otps WHERE phone_e164 = $1', [
+      phoneE164,
+    ]);
+    return rows[0] ? mapOtpRow(rows[0] as Parameters<typeof mapOtpRow>[0]) : null;
+  },
+  async put(record) {
+    await query(
+      `INSERT INTO otps (phone_e164, code_hash, mode, name, device_id, attempts, expires_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (phone_e164) DO UPDATE SET
+         code_hash = EXCLUDED.code_hash,
+         mode = EXCLUDED.mode,
+         name = EXCLUDED.name,
+         device_id = EXCLUDED.device_id,
+         attempts = EXCLUDED.attempts,
+         expires_at = EXCLUDED.expires_at,
+         created_at = EXCLUDED.created_at`,
+      [
+        record.phoneE164,
+        record.codeHash,
+        record.mode,
+        record.name ?? null,
+        record.deviceId ?? null,
+        record.attempts,
+        record.expiresAt,
+        record.createdAt,
+      ]
+    );
+  },
+  async delete(phoneE164) {
+    await query('DELETE FROM otps WHERE phone_e164 = $1', [phoneE164]);
+  },
+});
+
+export const otpsRepo: OtpsRepo =
+  driver === 'postgres'
+    ? postgresOtpsRepo()
+    : driver === 'dynamodb'
+      ? dynamoOtpsRepo()
+      : fileOtpsRepo();
 
 /* ---------------------------- Sessions ---------------------------- */
 
@@ -133,6 +272,20 @@ export interface SessionsRepo {
   get(token: string): Promise<SessionRecord | null>;
   put(record: SessionRecord): Promise<void>;
   delete(token: string): Promise<void>;
+}
+
+function mapSessionRow(row: {
+  token: string;
+  user_id: string;
+  created_at: Date | string;
+  expires_at: Date | string;
+}): SessionRecord {
+  return {
+    token: row.token,
+    userId: row.user_id,
+    createdAt: new Date(row.created_at).toISOString(),
+    expiresAt: new Date(row.expires_at).toISOString(),
+  };
 }
 
 const fileSessionsRepo = (): SessionsRepo => {
@@ -157,15 +310,55 @@ const dynamoSessionsRepo = (): SessionsRepo => ({
   delete: (token) => ddbDelete(`SESSION#${token}`, 'SESSION'),
 });
 
-export const sessionsRepo: SessionsRepo = usingDynamo
-  ? dynamoSessionsRepo()
-  : fileSessionsRepo();
+const postgresSessionsRepo = (): SessionsRepo => ({
+  async get(token) {
+    const { rows } = await query('SELECT * FROM sessions WHERE token = $1', [
+      token,
+    ]);
+    return rows[0]
+      ? mapSessionRow(rows[0] as Parameters<typeof mapSessionRow>[0])
+      : null;
+  },
+  async put(record) {
+    await query(
+      `INSERT INTO sessions (token, user_id, created_at, expires_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (token) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         created_at = EXCLUDED.created_at,
+         expires_at = EXCLUDED.expires_at`,
+      [record.token, record.userId, record.createdAt, record.expiresAt]
+    );
+  },
+  async delete(token) {
+    await query('DELETE FROM sessions WHERE token = $1', [token]);
+  },
+});
+
+export const sessionsRepo: SessionsRepo =
+  driver === 'postgres'
+    ? postgresSessionsRepo()
+    : driver === 'dynamodb'
+      ? dynamoSessionsRepo()
+      : fileSessionsRepo();
 
 /* ----------------------------- Trials ----------------------------- */
 
 export interface TrialsRepo {
   get(deviceId: string): Promise<TrialRecord | null>;
   put(record: TrialRecord): Promise<void>;
+}
+
+function mapTrialRow(row: {
+  device_id: string;
+  start_date_iso: Date | string;
+  claimed_at: Date | string;
+}): TrialRecord {
+  return {
+    deviceId: row.device_id,
+    startDateIso: new Date(row.start_date_iso).toISOString(),
+    claimedAt: new Date(row.claimed_at).toISOString(),
+  };
 }
 
 const fileTrialsRepo = (): TrialsRepo => {
@@ -187,9 +380,33 @@ const dynamoTrialsRepo = (): TrialsRepo => ({
   },
 });
 
-export const trialsRepo: TrialsRepo = usingDynamo
-  ? dynamoTrialsRepo()
-  : fileTrialsRepo();
+const postgresTrialsRepo = (): TrialsRepo => ({
+  async get(deviceId) {
+    const { rows } = await query('SELECT * FROM trials WHERE device_id = $1', [
+      deviceId,
+    ]);
+    return rows[0]
+      ? mapTrialRow(rows[0] as Parameters<typeof mapTrialRow>[0])
+      : null;
+  },
+  async put(record) {
+    await query(
+      `INSERT INTO trials (device_id, start_date_iso, claimed_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (device_id) DO UPDATE SET
+         start_date_iso = EXCLUDED.start_date_iso,
+         claimed_at = EXCLUDED.claimed_at`,
+      [record.deviceId, record.startDateIso, record.claimedAt]
+    );
+  },
+});
+
+export const trialsRepo: TrialsRepo =
+  driver === 'postgres'
+    ? postgresTrialsRepo()
+    : driver === 'dynamodb'
+      ? dynamoTrialsRepo()
+      : fileTrialsRepo();
 
 /* ----------------------------- Config ----------------------------- */
 
@@ -229,6 +446,28 @@ const dynamoConfigRepo = (): ConfigRepo => ({
   put: (config) => ddbPut({ pk: 'CONFIG', sk: 'CONFIG', ...config }),
 });
 
-export const configRepo: ConfigRepo = usingDynamo
-  ? dynamoConfigRepo()
-  : fileConfigRepo();
+const postgresConfigRepo = (): ConfigRepo => ({
+  async get() {
+    const { rows } = await query<{ config: AppConfig }>(
+      'SELECT config FROM app_config WHERE id = 1'
+    );
+    return rows[0]?.config ?? null;
+  },
+  async put(config) {
+    await query(
+      `INSERT INTO app_config (id, config, updated_at)
+       VALUES (1, $1::jsonb, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         config = EXCLUDED.config,
+         updated_at = NOW()`,
+      [JSON.stringify(config)]
+    );
+  },
+});
+
+export const configRepo: ConfigRepo =
+  driver === 'postgres'
+    ? postgresConfigRepo()
+    : driver === 'dynamodb'
+      ? dynamoConfigRepo()
+      : fileConfigRepo();

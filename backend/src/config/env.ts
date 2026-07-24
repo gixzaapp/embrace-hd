@@ -11,6 +11,13 @@ function parseOrigins(raw: string | undefined): string[] | '*' {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+function parseStorageDriver(): 'file' | 'dynamodb' | 'postgres' {
+  const raw = process.env.STORAGE_DRIVER?.trim().toLowerCase() ?? '';
+  if (raw === 'dynamodb') return 'dynamodb';
+  if (raw === 'postgres' || raw === 'postgresql') return 'postgres';
+  return 'file';
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 8787),
   revenueCatSecretKey: process.env.REVENUECAT_SECRET_API_KEY?.trim() ?? '',
@@ -43,15 +50,22 @@ export const env = {
   nodeEnv: process.env.NODE_ENV?.trim() ?? 'development',
   /** How often (seconds) to log the request-count summary. 0 disables periodic logs. */
   requestLogIntervalSec: Number(process.env.REQUEST_LOG_INTERVAL_SEC ?? 60),
-  /** Persistence backend: 'file' (local JSON, default) or 'dynamodb' (HA / multi-instance). */
-  storageDriver: (process.env.STORAGE_DRIVER?.trim().toLowerCase() === 'dynamodb'
-    ? 'dynamodb'
-    : 'file') as 'file' | 'dynamodb',
-  /** AWS region for the DynamoDB client (EB sets AWS_REGION automatically). */
+  /**
+   * Persistence backend:
+   * - file (local JSON)
+   * - dynamodb (AWS)
+   * - postgres (Hetzner / self-hosted)
+   */
+  storageDriver: parseStorageDriver(),
+  /** AWS region for the DynamoDB client */
   awsRegion:
     process.env.AWS_REGION?.trim() || process.env.AWS_DEFAULT_REGION?.trim() || 'eu-west-2',
-  /** Single-table DynamoDB table name. */
   ddbTable: process.env.DDB_TABLE?.trim() || 'embrace-hd',
-  /** Optional custom endpoint (e.g. http://localhost:8000 for DynamoDB Local). */
   ddbEndpoint: process.env.DDB_ENDPOINT?.trim() || '',
+  /** PostgreSQL (when STORAGE_DRIVER=postgres) */
+  dbHost: process.env.DB_HOST?.trim() || 'localhost',
+  dbPort: Number(process.env.DB_PORT ?? 5432),
+  dbName: process.env.DB_NAME?.trim() || 'embrace_hd_prod',
+  dbUser: process.env.DB_USER?.trim() || 'embrace_app',
+  dbPassword: process.env.DB_PASSWORD ?? '',
 };
