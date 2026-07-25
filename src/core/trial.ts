@@ -2,8 +2,8 @@
 
 export const TRIAL_STORAGE_KEY = 'embrace_hd_trial_start_iso' as const;
 
-/** Free trial length in calendar days */
-export const TRIAL_DURATION_DAYS = 7;
+/** Free trial length in calendar days (offline fallback; server config wins when online) */
+export const TRIAL_DURATION_DAYS = 21;
 
 export type TrialPhase = 'not_started' | 'active' | 'expired';
 

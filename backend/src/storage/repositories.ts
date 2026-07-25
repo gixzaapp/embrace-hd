@@ -38,6 +38,7 @@ function toPublicUser(stored: StoredUser): AuthUser {
     phoneE164: decryptPhone(stored.phoneE164),
     name: stored.name,
     deviceIds: stored.deviceIds ?? [],
+    lastInboundWhatsAppAt: stored.lastInboundWhatsAppAt,
     createdAt: stored.createdAt,
     updatedAt: stored.updatedAt,
   };
@@ -150,6 +151,7 @@ function mapUserRow(row: {
   phone_lookup?: string | null;
   name: string | null;
   device_ids: string[] | unknown;
+  last_inbound_whatsapp_at?: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }): AuthUser {
@@ -161,6 +163,9 @@ function mapUserRow(row: {
     phoneE164: decryptPhone(row.phone_e164),
     name: row.name ?? undefined,
     deviceIds,
+    lastInboundWhatsAppAt: row.last_inbound_whatsapp_at
+      ? new Date(row.last_inbound_whatsapp_at).toISOString()
+      : undefined,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
@@ -221,13 +226,17 @@ const postgresUsersRepo = (): UsersRepo => ({
   async put(user) {
     const stored = toStoredUser(user);
     await query(
-      `INSERT INTO users (id, phone_e164, phone_lookup, name, device_ids, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+      `INSERT INTO users (
+         id, phone_e164, phone_lookup, name, device_ids,
+         last_inbound_whatsapp_at, created_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
        ON CONFLICT (id) DO UPDATE SET
          phone_e164 = EXCLUDED.phone_e164,
          phone_lookup = EXCLUDED.phone_lookup,
          name = EXCLUDED.name,
          device_ids = EXCLUDED.device_ids,
+         last_inbound_whatsapp_at = EXCLUDED.last_inbound_whatsapp_at,
          updated_at = EXCLUDED.updated_at`,
       [
         stored.id,
@@ -235,6 +244,7 @@ const postgresUsersRepo = (): UsersRepo => ({
         stored.phoneLookup,
         stored.name ?? null,
         JSON.stringify(stored.deviceIds ?? []),
+        stored.lastInboundWhatsAppAt ?? null,
         stored.createdAt,
         stored.updatedAt,
       ]

@@ -35,6 +35,7 @@ Server listens on `http://localhost:8787` by default.
 | `WHATSAPP_OTP_TEMPLATE` | Approved authentication template name for business-initiated OTP (empty → free-form text) |
 | `WHATSAPP_OTP_TEMPLATE_LANG` | Template language code (default `en_US`) |
 | `WHATSAPP_OTP_TEMPLATE_HAS_BUTTON` | `false` if the template has no copy-code button (default `true`) |
+| `WHATSAPP_BUSINESS_E164` | Public business number (E.164) for `wa.me` deep links when opening a chat |
 | `AUTH_OTP_TTL_SEC` | OTP lifetime in seconds (default `300`) |
 | `SESSION_TTL_DAYS` | Session token lifetime in days (default `30`) |
 | `AUTH_ALLOW_OTP_HINT` | When `true` (default), mock OTP responses may include `otpHint` for local testing. Set `false` in production. |
@@ -84,7 +85,8 @@ OTP: 6 digits, hashed at rest, ~5 min TTL, max 5 attempts.
 | Method | Path | Notes |
 |--------|------|--------|
 | `GET` | `/v1/whatsapp/webhook` | Meta subscribe challenge (`hub.verify_token` must match `WHATSAPP_VERIFY_TOKEN`) |
-| `POST` | `/v1/whatsapp/webhook` | `Enroll me` → create user + OTP; `Login Me` → OTP for existing user |
+| `POST` | `/v1/whatsapp/webhook` | Inbound messages refresh the 24h window; `Enroll me` / `Login Me` → OTP |
+| `GET` | `/v1/whatsapp/conversation-window` | Auth required — whether the user's 24h Cloud API window is open |
 
 ### `GET /v1/config`
 Remote app configuration (edit `data/config.json`).

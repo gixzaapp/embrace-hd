@@ -72,6 +72,30 @@ export async function ensureUser(
   return user;
 }
 
+/** Record an inbound WhatsApp message — refreshes the Cloud API 24h customer window. */
+export async function touchLastInboundWhatsApp(
+  phoneE164: string
+): Promise<AuthUser | null> {
+  const user = await findUserByPhone(phoneE164);
+  if (!user) return null;
+  const now = new Date().toISOString();
+  user.lastInboundWhatsAppAt = now;
+  user.updatedAt = now;
+  await usersRepo.put(user);
+  return user;
+}
+
+export const CONVERSATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function isConversationWindowOpen(
+  lastInboundWhatsAppAt: string | undefined | null
+): boolean {
+  if (!lastInboundWhatsAppAt) return false;
+  const t = new Date(lastInboundWhatsAppAt).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < CONVERSATION_WINDOW_MS;
+}
+
 export function publicUser(user: AuthUser) {
   return {
     id: user.id,

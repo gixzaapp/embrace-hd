@@ -66,6 +66,8 @@ export type AuthUser = {
   phoneE164: string;
   name?: string;
   deviceIds: string[];
+  /** Last inbound WhatsApp message from this user (opens Cloud API 24h window). */
+  lastInboundWhatsAppAt?: string;
   createdAt: string;
   updatedAt: string;
 };

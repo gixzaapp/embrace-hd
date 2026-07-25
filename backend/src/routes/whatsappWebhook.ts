@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { env } from '../config/env.js';
+import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
+import { conversationWindowStatus } from '../services/conversationWindow.js';
 import { generateOtpCode, saveOtp } from '../services/otpStore.js';
 import {
   findUserByPhone,
   normalizePhoneE164,
+  touchLastInboundWhatsApp,
   upsertUserForAuth,
 } from '../services/userStore.js';
 import {
@@ -49,8 +52,9 @@ whatsappWebhookRouter.get('/webhook', (req, res) => {
 
 /**
  * Incoming WhatsApp messages.
+ * Any inbound message from a known user refreshes the 24h conversation window.
  * - "Enroll me" → create user + OTP reply
- * - "Login Me" → existing user only + OTP reply (verify via POST /v1/auth/verify-otp)
+ * - "Login Me" → existing user only + OTP reply
  */
 whatsappWebhookRouter.post('/webhook', (req, res) => {
   // Acknowledge immediately so Meta does not retry
@@ -60,6 +64,22 @@ whatsappWebhookRouter.post('/webhook', (req, res) => {
     console.error('[WhatsApp webhook] handler error', err);
   });
 });
+
+/**
+ * GET /v1/whatsapp/conversation-window
+ * Auth required — whether the logged-in user's Cloud API 24h window is open.
+ */
+whatsappWebhookRouter.get(
+  '/conversation-window',
+  requireAuth,
+  (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    res.json({
+      ok: true,
+      ...conversationWindowStatus(user),
+    });
+  }
+);
 
 async function handleWebhookPayload(body: unknown): Promise<void> {
   if (!body || typeof body !== 'object') return;
@@ -89,7 +109,18 @@ async function handleInboundMessage(
   message: WaTextMessage,
   value: WaChangeValue
 ): Promise<void> {
-  if (message.type !== 'text' || !message.text?.body || !message.from) {
+  if (!message.from) return;
+
+  const phoneE164 = normalizePhoneE164(message.from);
+  if (!phoneE164) {
+    console.warn('[WhatsApp webhook] invalid from', message.from);
+    return;
+  }
+
+  // Any inbound message type refreshes the 24h window for known users.
+  await touchLastInboundWhatsApp(phoneE164);
+
+  if (message.type !== 'text' || !message.text?.body) {
     return;
   }
 
@@ -97,12 +128,6 @@ async function handleInboundMessage(
   const enroll = isEnrollMeMessage(text);
   const login = isLoginMeMessage(text);
   if (!enroll && !login) {
-    return;
-  }
-
-  const phoneE164 = normalizePhoneE164(message.from);
-  if (!phoneE164) {
-    console.warn('[WhatsApp webhook] invalid from', message.from);
     return;
   }
 
@@ -115,6 +140,8 @@ async function handleInboundMessage(
       name: profileName,
       mode: 'register',
     });
+    // New users were missing on the first touch — stamp window now.
+    await touchLastInboundWhatsApp(phoneE164);
 
     console.info(
       `[WhatsApp webhook] Enroll me from ${redactPhone(phoneE164)} → user ${user.id} (${created ? 'created' : 'existing'})`

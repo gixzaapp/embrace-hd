@@ -15,3 +15,4 @@ export * from './galleryLibrary';
 export * from './videoDuration';
 export * from './authSession';
 export * from './authApi';
+export * from './conversationWindow';

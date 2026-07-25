@@ -13,12 +13,14 @@ CREATE TABLE IF NOT EXISTS users (
   phone_lookup  TEXT NOT NULL UNIQUE,
   name          TEXT,
   device_ids    JSONB NOT NULL DEFAULT '[]'::jsonb,
+  last_inbound_whatsapp_at TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL,
   updated_at    TIMESTAMPTZ NOT NULL
 );
 
 -- Upgrade path if an older users table exists without phone_lookup
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_lookup TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_inbound_whatsapp_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS users_phone_lookup_uidx ON users (phone_lookup);
 
 CREATE TABLE IF NOT EXISTS otps (
@@ -99,10 +101,55 @@ export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   return getPool().query<T>(text, params);
 }
 
-/** Create tables if missing (idempotent). */
+/**
+ * Split on semicolons so each statement runs separately.
+ * node-pg can fail a whole multi-statement batch on one error and leave upgrades half-applied.
+ */
+function splitSqlStatements(sql: string): string[] {
+  return sql
+    .split(';')
+    .map((s) => s.replace(/--[^\n]*/g, '').trim())
+    .filter(Boolean);
+}
+
+/** Create tables if missing and upgrade columns (idempotent). */
 export async function migratePostgres(): Promise<void> {
-  await query(SCHEMA_SQL);
-  // Verify the critical table exists
+  for (const statement of splitSqlStatements(SCHEMA_SQL)) {
+    await query(statement);
+  }
+
+  // Older deployments created users/otps without phone_lookup — force-add.
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_lookup TEXT`);
+  await query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_inbound_whatsapp_at TIMESTAMPTZ`
+  );
+  await query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS users_phone_lookup_uidx ON users (phone_lookup)`
+  );
+
+  // Old otps used phone_e164 as PK — rebuild if phone_lookup is missing.
+  const { rows: otpCols } = await query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'otps'`
+  );
+  const otpHasLookup = otpCols.some((c) => c.column_name === 'phone_lookup');
+  if (!otpHasLookup) {
+    await query(`DROP TABLE IF EXISTS otps`);
+    await query(`
+      CREATE TABLE otps (
+        phone_lookup  TEXT PRIMARY KEY,
+        phone_e164    TEXT NOT NULL,
+        code_hash     TEXT NOT NULL,
+        mode          TEXT NOT NULL CHECK (mode IN ('login', 'register')),
+        name          TEXT,
+        device_id     TEXT,
+        attempts      INT NOT NULL DEFAULT 0,
+        expires_at    TIMESTAMPTZ NOT NULL,
+        created_at    TIMESTAMPTZ NOT NULL
+      )
+    `);
+  }
+
   const { rows } = await query<{ exists: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM information_schema.tables
@@ -111,6 +158,16 @@ export async function migratePostgres(): Promise<void> {
   );
   if (!rows[0]?.exists) {
     throw new Error('Migration ran but public.users still missing — check DB privileges');
+  }
+
+  const { rows: userCols } = await query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'phone_lookup'`
+  );
+  if (!userCols.length) {
+    throw new Error(
+      'users.phone_lookup missing after migrate — grant ALTER on public.users to the app DB user'
+    );
   }
 }
 

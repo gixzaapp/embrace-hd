@@ -56,6 +56,11 @@ export const env = {
   /** Whether the auth template includes the standard copy-code button */
   whatsappOtpTemplateHasButton:
     process.env.WHATSAPP_OTP_TEMPLATE_HAS_BUTTON !== 'false',
+  /**
+   * Public WhatsApp business number (E.164) for wa.me deep links.
+   * Falls back to display number used for enroll if unset.
+   */
+  whatsappBusinessE164: process.env.WHATSAPP_BUSINESS_E164?.trim() ?? '',
   authOtpTtlSec: Number(process.env.AUTH_OTP_TTL_SEC ?? 300),
   sessionTtlDays: Number(process.env.SESSION_TTL_DAYS ?? 30),
   /** Return OTP in API JSON when mock / local testing */

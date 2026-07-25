@@ -6,9 +6,12 @@ CREATE TABLE IF NOT EXISTS users (
   phone_lookup  TEXT NOT NULL UNIQUE,
   name          TEXT,
   device_ids    JSONB NOT NULL DEFAULT '[]'::jsonb,
+  last_inbound_whatsapp_at TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL,
   updated_at    TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_inbound_whatsapp_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS otps (
   phone_lookup  TEXT PRIMARY KEY,

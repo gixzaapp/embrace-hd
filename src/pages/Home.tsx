@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { IonContent, IonPage, IonToast } from '@ionic/react';
 import { type MediaSource, type StatusLengthSec } from '../core';
-import { adsManager, pickStatusMedia, videoGeneratorService } from '../services';
+import {
+  adsManager,
+  fetchConversationWindow,
+  getClientBusinessWhatsAppE164,
+  isBackendEnabled,
+  openBusinessWhatsAppChat,
+  pickStatusMedia,
+  videoGeneratorService,
+} from '../services';
 import { getPreferredStatusLength, setPreferredStatusLength } from '../services/statusLengthPreference';
 import { probeVideoDurationSec } from '../services/videoDuration';
 import {
@@ -12,6 +20,7 @@ import {
   StatusShareSheet,
   TrialProgressBar,
   UploadDropZone,
+  useAuth,
   useTrial,
   VideoTimelineThumbnails,
 } from '../ui';
@@ -36,6 +45,7 @@ const Home: React.FC = () => {
     isTrialExpired,
     loading: trialLoading,
   } = useTrial();
+  const { token, isAuthenticated } = useAuth();
 
   const [statusLengthSec, setStatusLengthSec] = useState<StatusLengthSec>(
     getPreferredStatusLength
@@ -137,6 +147,51 @@ const Home: React.FC = () => {
         message: 'Select a video first, then tap Convert to HD',
       });
       return;
+    }
+
+    // Require an open WhatsApp 24h conversation window before upload (backend delivery).
+    if (isBackendEnabled()) {
+      if (!isAuthenticated || !token) {
+        setToast({
+          open: true,
+          message: 'Sign in with WhatsApp before converting to HD.',
+        });
+        return;
+      }
+      try {
+        const windowStatus = await fetchConversationWindow(token);
+        if (!windowStatus.open) {
+          const business =
+            windowStatus.businessPhoneE164 || getClientBusinessWhatsAppE164();
+          if (!business) {
+            setToast({
+              open: true,
+              message:
+                'WhatsApp business number is not configured. Contact support.',
+            });
+            return;
+          }
+          await openBusinessWhatsAppChat({
+            businessPhoneE164: business,
+            text: windowStatus.prefillMessage,
+          });
+          setToast({
+            open: true,
+            message:
+              'Send the message in WhatsApp, then return here and tap Convert to HD again.',
+          });
+          return;
+        }
+      } catch (err) {
+        setToast({
+          open: true,
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Could not verify WhatsApp chat window',
+        });
+        return;
+      }
     }
 
     const controller = new AbortController();

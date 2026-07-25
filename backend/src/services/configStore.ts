@@ -4,8 +4,8 @@ import type { AppConfig } from '../types.js';
 import { configRepo } from '../storage/repositories.js';
 
 const DEFAULT_CONFIG: AppConfig = {
-  appId: 'com.embracehd.app',
-  trialDurationDays: 7,
+  appId: 'uk.co.embraceapp.app',
+  trialDurationDays: 21,
   adsEnabled: true,
   premiumEntitlementId: 'premium',
   products: {
