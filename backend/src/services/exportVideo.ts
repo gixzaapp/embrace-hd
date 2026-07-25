@@ -31,7 +31,44 @@ export type ExportResult = {
   preset: ExportPreset;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
+  /** 0-based part index when splitting long videos */
+  partIndex?: number;
+  partCount?: number;
+  startSec?: number;
+  lengthSec?: number;
 };
+
+export type ExportSegment = {
+  startSec: number;
+  lengthSec: number;
+};
+
+/**
+ * Split a source duration into Status-length chunks (matches app timeline).
+ * 50s + 30s → [30s, 20s]
+ */
+export function buildExportSegments(
+  durationSec: number,
+  chunkSec: number
+): ExportSegment[] {
+  if (durationSec <= 0 || chunkSec <= 0) {
+    return [{ startSec: 0, lengthSec: Math.max(1, chunkSec) }];
+  }
+
+  const segments: ExportSegment[] = [];
+  let start = 0;
+  while (start < durationSec - 0.05) {
+    const lengthSec = Math.min(chunkSec, durationSec - start);
+    segments.push({
+      startSec: start,
+      lengthSec: Math.round(lengthSec * 10) / 10,
+    });
+    start += chunkSec;
+  }
+  return segments.length
+    ? segments
+    : [{ startSec: 0, lengthSec: Math.min(chunkSec, durationSec) }];
+}
 
 /**
  * WhatsApp Status encode (single pass — remux when already compliant):
@@ -298,7 +335,8 @@ function canRemux(
 function buildEncodeArgs(options: {
   inputPath: string;
   outputPath: string;
-  statusLengthSec: number;
+  startSec: number;
+  lengthSec: number;
   profile: EncodeProfile;
   vbv: { maxrate: string; bufsize: string };
   videoFilter: string;
@@ -308,10 +346,12 @@ function buildEncodeArgs(options: {
     '-hide_banner',
     '-loglevel',
     'error',
+    '-ss',
+    String(options.startSec),
     '-i',
     options.inputPath,
     '-t',
-    String(options.statusLengthSec),
+    String(options.lengthSec),
     '-vf',
     options.videoFilter,
     '-c:v',
@@ -354,42 +394,43 @@ function buildEncodeArgs(options: {
   ];
 }
 
-/**
- * WhatsApp Status export — remux when possible, else single-pass encode.
- */
-export async function exportWhatsAppHd(
-  options: ExportOptions
-): Promise<ExportResult> {
-  const delivery: ExportDelivery = options.delivery ?? 'status';
-  const table = delivery === 'status' ? STATUS_PRESETS : CHAT_HD_PRESETS;
-  const profile = table[options.preset];
-  if (!profile) {
-    throw new HttpError(400, 'preset must be 720p or 1080p');
-  }
-
+async function exportOneSegment(options: {
+  inputPath: string;
+  preset: ExportPreset;
+  statusLengthSec: 30 | 60;
+  delivery: ExportDelivery;
+  profile: EncodeProfile;
+  probe: ProbeInfo | null;
+  jobId: string;
+  startSec: number;
+  lengthSec: number;
+  partIndex: number;
+  partCount: number;
+}): Promise<ExportResult> {
   const { exports: exportsDir } = await ensureExportDirs();
-  const jobId = randomUUID();
-  const filename = `embraceHD_${delivery}_${options.preset}_${options.statusLengthSec}s_${jobId.slice(0, 8)}.mp4`;
+  const partTag =
+    options.partCount > 1 ? `_p${options.partIndex + 1}of${options.partCount}` : '';
+  const filename = `embraceHD_${options.delivery}_${options.preset}_${Math.round(options.lengthSec)}s${partTag}_${options.jobId.slice(0, 8)}.mp4`;
   const outputPath = path.join(exportsDir, filename);
+  const vbv = vbvForDuration(options.profile, options.lengthSec);
 
-  if (ffprobePath.path) {
-    process.env.FFPROBE_PATH = ffprobePath.path;
-  }
-
-  const probe = await probeInput(options.inputPath);
-  const vbv = vbvForDuration(profile, options.statusLengthSec);
-
-  if (probe && canRemux(probe, profile, options.statusLengthSec)) {
+  if (
+    options.probe &&
+    options.startSec === 0 &&
+    canRemux(options.probe, options.profile, options.lengthSec)
+  ) {
     try {
       await runFfmpeg([
         '-y',
         '-hide_banner',
         '-loglevel',
         'error',
+        '-ss',
+        String(options.startSec),
         '-i',
         options.inputPath,
         '-t',
-        String(options.statusLengthSec),
+        String(options.lengthSec),
         '-c',
         'copy',
         '-movflags',
@@ -399,61 +440,127 @@ export async function exportWhatsAppHd(
         outputPath,
       ]);
       const stat = await fsPromises.stat(outputPath);
-      if (stat.size <= profile.maxBytes) {
-        const shown = displaySize(probe);
+      if (stat.size <= options.profile.maxBytes) {
         console.log(
-          `[Export] remux ${delivery} ${shown.width}x${shown.height} ${(stat.size / (1024 * 1024)).toFixed(1)}MB (lossless copy)`
+          `[Export] remux part ${options.partIndex + 1}/${options.partCount} ${(stat.size / (1024 * 1024)).toFixed(1)}MB`
         );
         return {
-          jobId,
+          jobId: options.jobId,
           outputPath,
           filename,
           sizeBytes: stat.size,
           preset: options.preset,
           statusLengthSec: options.statusLengthSec,
-          delivery,
+          delivery: options.delivery,
+          partIndex: options.partIndex,
+          partCount: options.partCount,
+          startSec: options.startSec,
+          lengthSec: options.lengthSec,
         };
       }
       console.warn('[Export] Remux over size ceiling; single-pass encode');
+      await fsPromises.unlink(outputPath).catch(() => undefined);
     } catch (err) {
       console.warn('[Export] Remux failed; single-pass encode', err);
     }
   }
 
-  const shown = probe
-    ? displaySize(probe)
-    : { width: profile.width, height: profile.height };
-  const sourceFps = probe?.fps || 30;
+  const shown = options.probe
+    ? displaySize(options.probe)
+    : { width: options.profile.width, height: options.profile.height };
+  const sourceFps = options.probe?.fps || 30;
 
   console.log(
-    `[Export] encode ${delivery} ${profile.width}x${profile.height} crf=${profile.crf} max=${vbv.maxrate} from ${shown.width}x${shown.height} ${sourceFps.toFixed(2)}fps`
+    `[Export] encode part ${options.partIndex + 1}/${options.partCount} ${options.startSec.toFixed(1)}s+${options.lengthSec.toFixed(1)}s ${options.profile.width}x${options.profile.height} from ${shown.width}x${shown.height}`
   );
 
   await runFfmpeg(
     buildEncodeArgs({
       inputPath: options.inputPath,
       outputPath,
-      statusLengthSec: options.statusLengthSec,
-      profile,
+      startSec: options.startSec,
+      lengthSec: options.lengthSec,
+      profile: options.profile,
       vbv,
-      videoFilter: buildVideoFilter(profile, sourceFps),
+      videoFilter: buildVideoFilter(options.profile, sourceFps),
     })
   );
 
   const stat = await fsPromises.stat(outputPath);
   console.log(
-    `[Export] done ${delivery} ${profile.width}x${profile.height} ${(stat.size / (1024 * 1024)).toFixed(1)}MB`
+    `[Export] done part ${options.partIndex + 1}/${options.partCount} ${(stat.size / (1024 * 1024)).toFixed(1)}MB`
   );
 
   return {
-    jobId,
+    jobId: options.jobId,
     outputPath,
     filename,
     sizeBytes: stat.size,
     preset: options.preset,
     statusLengthSec: options.statusLengthSec,
-    delivery,
+    delivery: options.delivery,
+    partIndex: options.partIndex,
+    partCount: options.partCount,
+    startSec: options.startSec,
+    lengthSec: options.lengthSec,
   };
+}
+
+/**
+ * WhatsApp Status export — splits long videos into statusLengthSec chunks
+ * (e.g. 50s source + 30s mode → part1 30s + part2 20s).
+ */
+export async function exportWhatsAppHd(
+  options: ExportOptions
+): Promise<ExportResult> {
+  const parts = await exportWhatsAppHdSegments(options);
+  return parts[0];
+}
+
+/** Encode every Status-sized segment from the source video. */
+export async function exportWhatsAppHdSegments(
+  options: ExportOptions
+): Promise<ExportResult[]> {
+  const delivery: ExportDelivery = options.delivery ?? 'status';
+  const table = delivery === 'status' ? STATUS_PRESETS : CHAT_HD_PRESETS;
+  const profile = table[options.preset];
+  if (!profile) {
+    throw new HttpError(400, 'preset must be 720p or 1080p');
+  }
+
+  if (ffprobePath.path) {
+    process.env.FFPROBE_PATH = ffprobePath.path;
+  }
+
+  const probe = await probeInput(options.inputPath);
+  const durationSec = probe?.durationSec || options.statusLengthSec;
+  const segments = buildExportSegments(durationSec, options.statusLengthSec);
+  const jobId = randomUUID();
+
+  console.log(
+    `[Export] ${segments.length} segment(s) from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
+  );
+
+  const results: ExportResult[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    results.push(
+      await exportOneSegment({
+        inputPath: options.inputPath,
+        preset: options.preset,
+        statusLengthSec: options.statusLengthSec,
+        delivery,
+        profile,
+        probe,
+        jobId,
+        startSec: seg.startSec,
+        lengthSec: seg.lengthSec,
+        partIndex: i,
+        partCount: segments.length,
+      })
+    );
+  }
+  return results;
 }
 
 export async function getUploadsDir(): Promise<string> {

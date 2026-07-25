@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { env } from '../config/env.js';
 import { query } from '../storage/postgres.js';
 import {
-  exportWhatsAppHd,
+  exportWhatsAppHdSegments,
   getExportPath,
   type ExportDelivery,
   type ExportPreset,
@@ -209,29 +209,49 @@ async function runExportJob(
   job.updatedAt = new Date().toISOString();
   await persist(job);
 
-  let outputPath: string | undefined;
+  const outputPaths: string[] = [];
 
   try {
-    const result = await exportWhatsAppHd({
+    const parts = await exportWhatsAppHdSegments({
       inputPath,
       preset: job.preset,
       statusLengthSec: job.statusLengthSec,
       delivery: job.delivery,
     });
-    outputPath = result.outputPath;
 
-    await deliverExportVideoToWhatsApp({
-      phoneE164,
-      filePath: result.outputPath,
-      caption: `Your Embrace HD ${job.preset} · ${job.statusLengthSec}s video is ready.`,
-    });
+    if (!parts.length) {
+      throw new Error('Export produced no video parts');
+    }
+
+    let totalBytes = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      outputPaths.push(part.outputPath);
+      totalBytes += part.sizeBytes;
+
+      const lengthLabel = Math.round(part.lengthSec ?? job.statusLengthSec);
+      const caption =
+        parts.length > 1
+          ? `Embrace HD · part ${i + 1}/${parts.length} · ${lengthLabel}s (${job.preset})`
+          : `Your Embrace HD ${job.preset} · ${lengthLabel}s video is ready.`;
+
+      await deliverExportVideoToWhatsApp({
+        phoneE164,
+        filePath: part.outputPath,
+        caption,
+      });
+
+      // Brief pause so WhatsApp Cloud API does not throttle multi-part sends
+      if (i < parts.length - 1) {
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
 
     job.status = 'done';
-    job.filename = result.filename;
+    job.filename = parts.map((p) => p.filename).join(',');
     job.deliveredVia = 'whatsapp';
-    // No public download — video was sent on WhatsApp only.
     job.downloadPath = undefined;
-    job.sizeBytes = result.sizeBytes;
+    job.sizeBytes = totalBytes;
     job.updatedAt = new Date().toISOString();
     await persist(job);
   } catch (err) {
@@ -241,11 +261,12 @@ async function runExportJob(
     await persist(job);
   } finally {
     await fs.unlink(inputPath).catch(() => undefined);
-    if (outputPath) {
-      await fs.unlink(outputPath).catch(() => undefined);
-      // Also clear via known export path helper if filename differs
-      if (job.filename) {
-        await fs.unlink(getExportPath(job.filename)).catch(() => undefined);
+    for (const p of outputPaths) {
+      await fs.unlink(p).catch(() => undefined);
+    }
+    if (job.filename) {
+      for (const name of job.filename.split(',')) {
+        await fs.unlink(getExportPath(name.trim())).catch(() => undefined);
       }
     }
   }
