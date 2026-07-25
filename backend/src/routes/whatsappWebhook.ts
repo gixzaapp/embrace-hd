@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { env } from '../config/env.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
-import { conversationWindowStatus } from '../services/conversationWindow.js';
+import { conversationWindowStatus, CHAT_WINDOW_OPEN_REPLY } from '../services/conversationWindow.js';
 import { generateOtpCode, saveOtp } from '../services/otpStore.js';
 import {
   findUserByPhone,
@@ -150,14 +150,26 @@ async function handleInboundMessage(
     );
   }
 
-  if (message.type !== 'text' || !message.text?.body) {
-    return;
-  }
+  const textBody =
+    message.type === 'text' && message.text?.body
+      ? message.text.body
+      : '';
+  const enroll = textBody ? isEnrollMeMessage(textBody) : false;
+  const login = textBody ? isLoginMeMessage(textBody) : false;
 
-  const text = message.text.body;
-  const enroll = isEnrollMeMessage(text);
-  const login = isLoginMeMessage(text);
+  // Convert-flow: any non-OTP message that opened the window gets a clear next-step reply.
   if (!enroll && !login) {
+    if (touched) {
+      await sendWhatsAppText({
+        phoneE164,
+        body: CHAT_WINDOW_OPEN_REPLY,
+      });
+    } else {
+      await sendWhatsAppText({
+        phoneE164,
+        body: 'Please sign in to Embrace HD with this WhatsApp number first, then try Convert again.',
+      });
+    }
     return;
   }
 

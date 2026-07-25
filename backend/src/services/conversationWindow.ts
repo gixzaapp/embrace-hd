@@ -9,6 +9,10 @@ import {
 const DEFAULT_PREFILL =
   'Hi — please open my Embrace HD chat so I can convert videos.';
 
+/** Auto-reply after the user messages to open the 24h window (Convert flow). */
+export const CHAT_WINDOW_OPEN_REPLY =
+  'Chat open, go back and upload the video.';
+
 export type ConversationWindowStatus = {
   open: boolean;
   lastInboundWhatsAppAt: string | null;
