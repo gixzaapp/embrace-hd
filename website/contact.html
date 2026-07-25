@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contact — Embrace HD</title>
+    <meta name="description" content="Contact the Embrace HD team for support, privacy, or partnerships." />
+    <link rel="icon" href="assets/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/site.css" />
+  </head>
+  <body>
+    <div class="site-bg" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <div class="wrap nav">
+        <a class="brand" href="index.html">
+          <img class="brand-mark" src="assets/icon.png" width="32" height="32" alt="" />
+          Embrace <span>HD</span>
+        </a>
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+          Menu
+        </button>
+        <ul class="nav-links" id="site-nav">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="terms.html">Terms</a></li>
+          <li><a href="contact.html" aria-current="page">Contact</a></li>
+        </ul>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap page-hero">
+        <h1>Contact</h1>
+        <p>Support, privacy requests, and partnerships — send a note and we’ll get back to you.</p>
+      </div>
+
+      <div class="wrap contact-grid">
+        <form class="contact-form" action="mailto:info@embraceapp.co.uk" method="get" enctype="text/plain">
+          <input type="hidden" name="subject" value="Embrace HD inquiry" />
+          <div class="field">
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" autocomplete="name" required />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label for="body">Message</label>
+            <textarea id="body" name="body" required></textarea>
+          </div>
+          <button class="btn btn-primary" type="submit">Open email draft</button>
+        </form>
+
+        <aside class="contact-aside">
+          <p>
+            <strong>Email</strong>
+            <a href="mailto:info@embraceapp.co.uk">info@embraceapp.co.uk</a>
+          </p>
+          <p>
+            <strong>Website</strong>
+            <a href="https://embraceapp.co.uk">embraceapp.co.uk</a>
+          </p>
+          <p>
+            <strong>API</strong>
+            <a href="https://api.embraceapp.co.uk/health">api.embraceapp.co.uk</a>
+          </p>
+          <p>
+            The form opens your email app with a draft. If that doesn’t work on your device, write
+            us directly at the address above.
+          </p>
+        </aside>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-row">
+          <div class="footer-brand">
+            <img class="brand-mark" src="assets/icon.png" width="26" height="26" alt="" />
+            Embrace <span>HD</span>
+          </div>
+          <ul class="footer-links">
+            <li><a href="about.html">About</a></li>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="terms.html">Terms of Service</a></li>
+            <li><a href="contact.html">Contact</a></li>
+          </ul>
+        </div>
+        <p class="footer-copy">© <span id="y"></span> Embrace HD. All rights reserved.</p>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById("y").textContent = new Date().getFullYear();
+
+      // Build a cleaner mailto body from the fields
+      document.querySelector(".contact-form")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const name = document.getElementById("name").value.trim();
+        const email = document.getElementById("email").value.trim();
+        const body = document.getElementById("body").value.trim();
+        const subject = encodeURIComponent("Embrace HD inquiry");
+        const text = encodeURIComponent(`Name: ${name}\nEmail: ${email}\n\n${body}`);
+        window.location.href = `mailto:info@embraceapp.co.uk?subject=${subject}&body=${text}`;
+      });
+    </script>
+    <script src="js/site.js"></script>
+  </body>
+</html>

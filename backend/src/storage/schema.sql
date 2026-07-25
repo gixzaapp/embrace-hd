@@ -2,7 +2,8 @@
 
 CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY,
-  phone_e164    TEXT NOT NULL UNIQUE,
+  phone_e164    TEXT NOT NULL,
+  phone_lookup  TEXT NOT NULL UNIQUE,
   name          TEXT,
   device_ids    JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at    TIMESTAMPTZ NOT NULL,
@@ -10,7 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS otps (
-  phone_e164    TEXT PRIMARY KEY,
+  phone_lookup  TEXT PRIMARY KEY,
+  phone_e164    TEXT NOT NULL,
   code_hash     TEXT NOT NULL,
   mode          TEXT NOT NULL CHECK (mode IN ('login', 'register')),
   name          TEXT,

@@ -10,6 +10,13 @@ function cloudApiConfigured(): boolean {
   return Boolean(env.whatsappToken && env.whatsappPhoneNumberId);
 }
 
+/** Redact phone for logs — never print full numbers. */
+export function redactPhone(phoneE164: string): string {
+  const digits = phoneE164.replace(/\D/g, '');
+  if (digits.length < 4) return '***';
+  return `+***${digits.slice(-4)}`;
+}
+
 /** Reply / OTP body shown to the user on WhatsApp */
 export function formatOtpLoginMessage(code: string): string {
   return `Use this otp ${code} to login to the app using your WhatsApp number`;
@@ -17,7 +24,7 @@ export function formatOtpLoginMessage(code: string): string {
 
 /**
  * Send a free-form text message via WhatsApp Cloud API.
- * Returns false if Cloud API is not configured or the send failed.
+ * `phoneE164` must be plaintext (decrypted); encryption is only for DB storage.
  */
 export async function sendWhatsAppText(options: {
   phoneE164: string;
@@ -25,7 +32,7 @@ export async function sendWhatsAppText(options: {
 }): Promise<boolean> {
   if (!cloudApiConfigured()) {
     console.info(
-      `[WhatsApp] mock text → ${options.phoneE164}: ${options.body}`
+      `[WhatsApp] mock text → ${redactPhone(options.phoneE164)}: ${options.body}`
     );
     return false;
   }
@@ -128,7 +135,7 @@ export async function deliverWhatsAppOtp(options: {
 }): Promise<OtpDeliveryResult> {
   if (!cloudApiConfigured()) {
     console.info(
-      `[Auth OTP] mock → ${options.phoneE164} code=${options.code}`
+      `[Auth OTP] mock → ${redactPhone(options.phoneE164)} code=${options.code}`
     );
     return {
       channel: 'mock',
@@ -151,7 +158,7 @@ export async function deliverWhatsAppOtp(options: {
 
   if (!sent) {
     console.info(
-      `[Auth OTP] fallback mock → ${options.phoneE164} code=${options.code}`
+      `[Auth OTP] fallback mock → ${redactPhone(options.phoneE164)} code=${options.code}`
     );
     return {
       channel: 'mock',

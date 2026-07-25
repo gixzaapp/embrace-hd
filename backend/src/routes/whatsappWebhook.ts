@@ -10,6 +10,7 @@ import {
   formatOtpLoginMessage,
   isEnrollMeMessage,
   isLoginMeMessage,
+  redactPhone,
   sendWhatsAppText,
 } from '../services/whatsappOtp.js';
 
@@ -116,7 +117,7 @@ async function handleInboundMessage(
     });
 
     console.info(
-      `[WhatsApp webhook] Enroll me from ${phoneE164} → user ${user.id} (${created ? 'created' : 'existing'})`
+      `[WhatsApp webhook] Enroll me from ${redactPhone(phoneE164)} → user ${user.id} (${created ? 'created' : 'existing'})`
     );
 
     await issueAndReplyOtp({
@@ -130,7 +131,7 @@ async function handleInboundMessage(
   // Login Me — account must already exist
   const existing = await findUserByPhone(phoneE164);
   if (!existing) {
-    console.info(`[WhatsApp webhook] Login Me from ${phoneE164} — no account`);
+    console.info(`[WhatsApp webhook] Login Me from ${redactPhone(phoneE164)} — no account`);
     await sendWhatsAppText({
       phoneE164,
       body: 'No account found for this number. Open the app and tap Join the app first (send Enroll me).',
@@ -139,7 +140,7 @@ async function handleInboundMessage(
   }
 
   console.info(
-    `[WhatsApp webhook] Login Me from ${phoneE164} → user ${existing.id}`
+    `[WhatsApp webhook] Login Me from ${redactPhone(phoneE164)} → user ${existing.id}`
   );
 
   await issueAndReplyOtp({
@@ -170,7 +171,7 @@ async function issueAndReplyOtp(options: {
 
   if (!sent) {
     console.info(
-      `[WhatsApp webhook] OTP for ${options.phoneE164} (not delivered via API): ${code}`
+      `[WhatsApp webhook] OTP for ${redactPhone(options.phoneE164)} (not delivered via API): ${code}`
     );
   }
 }

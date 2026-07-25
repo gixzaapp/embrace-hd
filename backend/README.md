@@ -41,6 +41,7 @@ Server listens on `http://localhost:8787` by default.
 | `AUTH_TEST_OTP` | Fixed OTP that always verifies (e.g. `123456`) — **testing only**, leave empty in production. |
 | `REQUEST_LOG_INTERVAL_SEC` | Request-count log interval in seconds (default `60`, `0` disables) |
 | `STORAGE_DRIVER` | `file` \| `dynamodb` \| `postgres` (use `postgres` on Hetzner) |
+| `PHONE_DATA_KEY` | **Required.** 32-byte hex (64 chars) master key for AES-256-GCM encryption of WhatsApp numbers at rest + HMAC blind index. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Keep secret; rotating without re-encrypt breaks lookups. |
 | `DB_HOST` | Postgres host (`localhost` on host; `host.docker.internal` from Compose) |
 | `DB_PORT` | Postgres port (default `5432`) |
 | `DB_NAME` | Database name |
@@ -55,6 +56,7 @@ Server listens on `http://localhost:8787` by default.
 ### WhatsApp OTP delivery
 
 - **App flow (direct):** user enters their WhatsApp number → app calls `POST /v1/auth/request-otp` → backend generates a hashed OTP and sends it via the [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api). User enters the code → app calls `POST /v1/auth/verify-otp` → backend authorizes (session token) or rejects.
+- Phone numbers are **encrypted at rest** (`PHONE_DATA_KEY` → AES-256-GCM) and looked up via an HMAC blind index. They are decrypted only in memory when sending WhatsApp messages.
 - When **both** `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` are set, OTPs are sent live. Otherwise the backend uses **mock** mode: the OTP is logged server-side and, if `AUTH_ALLOW_OTP_HINT` is enabled, returned as `otpHint` in the `request-otp` response (non-production testing).
 - **Business-initiated sends need an approved authentication template.** Set `WHATSAPP_OTP_TEMPLATE` to your approved template name. Without a template, free-form text is attempted but is only delivered inside the 24h customer-care window (after the user has messaged you).
 - The optional `POST /v1/whatsapp/webhook` (Enroll me / Login Me) is still available but no longer required for the direct app flow.
@@ -380,6 +382,7 @@ This produces **`backend/build/embrace-hd-backend-eb.zip`** containing the compi
 | `WHATSAPP_OTP_TEMPLATE_LANG` | e.g. `en_US` |
 | `AUTH_ALLOW_OTP_HINT` | `false` in production |
 | `AUTH_TEST_OTP` | empty in production |
+| `PHONE_DATA_KEY` | 64-char hex; required for encrypted phone storage |
 | `STORAGE_DRIVER` | `dynamodb` for a load-balanced environment (default `file`) |
 | `DDB_TABLE` | table name if not `embrace-hd` |
 

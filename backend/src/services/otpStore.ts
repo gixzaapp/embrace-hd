@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { env } from '../config/env.js';
 import type { OtpRecord } from '../types.js';
 import { otpsRepo } from '../storage/repositories.js';
+import { redactPhone } from './whatsappOtp.js';
 
 export type { OtpRecord };
 
@@ -56,7 +57,7 @@ export async function verifyOtp(
     if (record) {
       await otpsRepo.delete(phoneE164);
     }
-    console.warn(`[Auth OTP] test OTP accepted for ${phoneE164}`);
+    console.warn(`[Auth OTP] test OTP accepted for ${redactPhone(phoneE164)}`);
     return {
       ok: true,
       record:

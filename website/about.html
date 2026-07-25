@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>About — Embrace HD</title>
+    <meta
+      name="description"
+      content="Learn what Embrace HD is for: converting video into WhatsApp Status–ready HD with a clean share flow."
+    />
+    <link rel="icon" href="assets/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/site.css" />
+  </head>
+  <body>
+    <div class="site-bg" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <div class="wrap nav">
+        <a class="brand" href="index.html">
+          <img class="brand-mark" src="assets/icon.png" width="32" height="32" alt="" />
+          Embrace <span>HD</span>
+        </a>
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+          Menu
+        </button>
+        <ul class="nav-links" id="site-nav">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html" aria-current="page">About</a></li>
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="terms.html">Terms</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap page-hero">
+        <h1>About Embrace HD</h1>
+        <p>
+          Embrace HD is a mobile app that prepares your videos for WhatsApp — especially Status —
+          so they stay sharp after upload.
+        </p>
+      </div>
+
+      <div class="wrap prose">
+        <h2>Why we built it</h2>
+        <p>
+          WhatsApp often re-encodes video. A clip that looks fine in your gallery can look soft or blocky
+          once it hits Status. Embrace HD converts to a Status-friendly HD profile, then gets that file
+          back to you on WhatsApp — so you can post or forward without fighting compression yourself.
+        </p>
+
+        <h2>What the app does</h2>
+        <ul>
+          <li>Pick a video from your device</li>
+          <li>Convert it with WhatsApp-oriented HD settings (including common Status length options)</li>
+          <li>
+            Deliver the finished video to the WhatsApp number you registered with — ready to save,
+            forward, or post as Status
+          </li>
+        </ul>
+
+        <h2>Accounts &amp; access</h2>
+        <p>
+          You sign in with your WhatsApp number using a one-time password. Trial and subscription
+          options may unlock HD export and control whether ads are shown. Subscription verification
+          can use a third-party billing partner where configured.
+        </p>
+
+        <h2>Who we are</h2>
+        <p>
+          Embrace HD is operated under the Embrace App brand
+          (<a href="https://embraceapp.co.uk">embraceapp.co.uk</a>.
+          For product questions or support, use the
+          <a href="contact.html">Contact</a> page.
+        </p>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-row">
+          <div class="footer-brand">
+            <img class="brand-mark" src="assets/icon.png" width="26" height="26" alt="" />
+            Embrace <span>HD</span>
+          </div>
+          <ul class="footer-links">
+            <li><a href="about.html">About</a></li>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="terms.html">Terms of Service</a></li>
+            <li><a href="contact.html">Contact</a></li>
+          </ul>
+        </div>
+        <p class="footer-copy">© <span id="y"></span> Embrace HD. All rights reserved.</p>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById("y").textContent = new Date().getFullYear();
+    </script>
+    <script src="js/site.js"></script>
+  </body>
+</html>

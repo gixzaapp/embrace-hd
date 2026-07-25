@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.embracehd.app',
+  appId: 'uk.co.embraceapp.app',
   appName: 'Embrace HD',
   webDir: 'dist',
   // Dev: allow HTTP calls to local Node backend (mixed-content otherwise blocks)

@@ -83,4 +83,9 @@ export const env = {
   dbName: process.env.DB_NAME?.trim() || 'embrace_hd_prod',
   dbUser: process.env.DB_USER?.trim() || 'embrace_app',
   dbPassword: process.env.DB_PASSWORD ?? '',
+  /**
+   * 32-byte master key as hex (64 chars). Used to derive AES-256-GCM + HMAC keys
+   * for WhatsApp phone numbers at rest. Required when storing auth users.
+   */
+  phoneDataKey: process.env.PHONE_DATA_KEY?.trim() ?? '',
 };

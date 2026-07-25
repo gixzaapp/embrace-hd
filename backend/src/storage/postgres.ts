@@ -9,15 +9,21 @@ let pool: pg.Pool | null = null;
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY,
-  phone_e164    TEXT NOT NULL UNIQUE,
+  phone_e164    TEXT NOT NULL,
+  phone_lookup  TEXT NOT NULL UNIQUE,
   name          TEXT,
   device_ids    JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at    TIMESTAMPTZ NOT NULL,
   updated_at    TIMESTAMPTZ NOT NULL
 );
 
+-- Upgrade path if an older users table exists without phone_lookup
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_lookup TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS users_phone_lookup_uidx ON users (phone_lookup);
+
 CREATE TABLE IF NOT EXISTS otps (
-  phone_e164    TEXT PRIMARY KEY,
+  phone_lookup  TEXT PRIMARY KEY,
+  phone_e164    TEXT NOT NULL,
   code_hash     TEXT NOT NULL,
   mode          TEXT NOT NULL CHECK (mode IN ('login', 'register')),
   name          TEXT,
