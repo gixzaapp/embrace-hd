@@ -37,7 +37,8 @@ export class WhatsAppStatusExporter {
     project: VideoProject,
     options: StatusExportOptions,
     onProgress?: (progress: number) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    authToken?: string
   ): Promise<RenderJob> {
     const prepared = await this.prepareProject(project, options);
     const composition = await videoEngine.buildComposition(prepared);
@@ -49,7 +50,7 @@ export class WhatsAppStatusExporter {
 
     return videoEngine.render(
       composition,
-      { ...encode, signal },
+      { ...encode, signal, authToken },
       onProgress
     );
   }

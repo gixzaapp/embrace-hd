@@ -5,9 +5,15 @@ import { env } from '../config/env.js';
 import { query } from '../storage/postgres.js';
 import {
   exportWhatsAppHd,
+  getExportPath,
   type ExportDelivery,
   type ExportPreset,
 } from './exportVideo.js';
+import { deliverExportVideoToWhatsApp } from './whatsappMedia.js';
+import {
+  isConversationWindowOpen,
+  type AuthUser,
+} from './userStore.js';
 
 export type ExportJobStatus = 'queued' | 'processing' | 'done' | 'failed';
 
@@ -15,12 +21,16 @@ export type ExportJob = {
   jobId: string;
   status: ExportJobStatus;
   error?: string;
+  /** Internal filename only — not returned as a public download when delivered via WhatsApp. */
   filename?: string;
+  /** @deprecated Prefer deliveredVia=whatsapp; kept for legacy clients */
   downloadPath?: string;
+  deliveredVia?: 'whatsapp' | 'download';
   preset: ExportPreset;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
   sizeBytes?: number;
+  userId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -46,12 +56,14 @@ function mapJobRow(row: {
   created_at: Date | string;
   updated_at: Date | string;
 }): ExportJob {
+  const downloadPath = row.download_path ?? undefined;
   return {
     jobId: row.job_id,
     status: row.status,
     error: row.error ?? undefined,
     filename: row.filename ?? undefined,
-    downloadPath: row.download_path ?? undefined,
+    downloadPath,
+    deliveredVia: downloadPath ? 'download' : row.filename ? 'whatsapp' : undefined,
     preset: row.preset as ExportPreset,
     statusLengthSec: row.status_length_sec as 30 | 60,
     delivery: row.delivery as ExportDelivery,
@@ -112,6 +124,17 @@ async function persist(job: ExportJob): Promise<void> {
   }
 }
 
+/** Public poll payload — never exposes a download URL for WhatsApp delivery. */
+export function publicExportJob(job: ExportJob): Omit<ExportJob, 'downloadPath'> & {
+  downloadPath?: undefined;
+} {
+  const { downloadPath: _d, ...rest } = job;
+  return {
+    ...rest,
+    deliveredVia: job.deliveredVia ?? (job.downloadPath ? 'download' : 'whatsapp'),
+  };
+}
+
 export async function getExportJob(jobId: string): Promise<ExportJob | null> {
   const cached = jobs.get(jobId);
   if (cached) return cached;
@@ -137,14 +160,21 @@ export async function getExportJob(jobId: string): Promise<ExportJob | null> {
 }
 
 /**
- * Accept an uploaded file, return immediately, encode in the background.
+ * Accept an uploaded file, return immediately, encode + WhatsApp-deliver in background.
  */
 export async function enqueueExportJob(options: {
   inputPath: string;
   preset: ExportPreset;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
+  user: AuthUser;
 }): Promise<ExportJob> {
+  if (!isConversationWindowOpen(options.user.lastInboundWhatsAppAt)) {
+    throw new Error(
+      'WhatsApp chat window is closed — message the business number, then try again'
+    );
+  }
+
   const now = new Date().toISOString();
   const job: ExportJob = {
     jobId: randomUUID(),
@@ -152,25 +182,34 @@ export async function enqueueExportJob(options: {
     preset: options.preset,
     statusLengthSec: options.statusLengthSec,
     delivery: options.delivery,
+    userId: options.user.id,
     createdAt: now,
     updatedAt: now,
   };
   await persist(job);
 
-  void runExportJob(job.jobId, options.inputPath).catch((err) => {
-    console.error('[ExportJob] unhandled', job.jobId, err);
-  });
+  void runExportJob(job.jobId, options.inputPath, options.user.phoneE164).catch(
+    (err) => {
+      console.error('[ExportJob] unhandled', job.jobId, err);
+    }
+  );
 
   return job;
 }
 
-async function runExportJob(jobId: string, inputPath: string): Promise<void> {
+async function runExportJob(
+  jobId: string,
+  inputPath: string,
+  phoneE164: string
+): Promise<void> {
   const job = await getExportJob(jobId);
   if (!job) return;
 
   job.status = 'processing';
   job.updatedAt = new Date().toISOString();
   await persist(job);
+
+  let outputPath: string | undefined;
 
   try {
     const result = await exportWhatsAppHd({
@@ -179,10 +218,19 @@ async function runExportJob(jobId: string, inputPath: string): Promise<void> {
       statusLengthSec: job.statusLengthSec,
       delivery: job.delivery,
     });
+    outputPath = result.outputPath;
+
+    await deliverExportVideoToWhatsApp({
+      phoneE164,
+      filePath: result.outputPath,
+      caption: `Your Embrace HD ${job.preset} · ${job.statusLengthSec}s video is ready.`,
+    });
 
     job.status = 'done';
     job.filename = result.filename;
-    job.downloadPath = `/v1/export/${encodeURIComponent(result.filename)}`;
+    job.deliveredVia = 'whatsapp';
+    // No public download — video was sent on WhatsApp only.
+    job.downloadPath = undefined;
     job.sizeBytes = result.sizeBytes;
     job.updatedAt = new Date().toISOString();
     await persist(job);
@@ -193,5 +241,12 @@ async function runExportJob(jobId: string, inputPath: string): Promise<void> {
     await persist(job);
   } finally {
     await fs.unlink(inputPath).catch(() => undefined);
+    if (outputPath) {
+      await fs.unlink(outputPath).catch(() => undefined);
+      // Also clear via known export path helper if filename differs
+      if (job.filename) {
+        await fs.unlink(getExportPath(job.filename)).catch(() => undefined);
+      }
+    }
   }
 }

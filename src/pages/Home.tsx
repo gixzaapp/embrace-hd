@@ -17,12 +17,12 @@ import {
   ConvertButton,
   ConvertProgressModal,
   StatusLengthPicker,
-  StatusShareSheet,
   TrialProgressBar,
   UploadDropZone,
   useAuth,
   useTrial,
   VideoTimelineThumbnails,
+  WhatsAppDeliveredModal,
 } from '../ui';
 import './Home.css';
 
@@ -31,11 +31,6 @@ function isAbortError(err: unknown): boolean {
     (err instanceof DOMException && err.name === 'AbortError') ||
     (err instanceof Error && /abort|cancel/i.test(err.message))
   );
-}
-
-/** Let Ionic finish dismissing one modal before presenting the next. */
-function waitForModalHandoff(ms = 180): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const Home: React.FC = () => {
@@ -57,12 +52,8 @@ const Home: React.FC = () => {
   const [convertProgress, setConvertProgress] = useState(0);
   const [convertStatus, setConvertStatus] = useState('Uploading & converting…');
   const abortRef = useRef<AbortController | null>(null);
-  /** When true, convert modal dismiss should open the share sheet. */
-  const openShareAfterConvertRef = useRef(false);
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
-  const [shareBusy, setShareBusy] = useState(false);
-  const [shareUri, setShareUri] = useState<string | null>(null);
-  const [shareOpen, setShareOpen] = useState(false);
+  const [deliveredOpen, setDeliveredOpen] = useState(false);
   const [toast, setToast] = useState<{ open: boolean; message: string }>({
     open: false,
     message: '',
@@ -112,24 +103,8 @@ const Home: React.FC = () => {
   };
 
   const onCancelConvert = () => {
-    openShareAfterConvertRef.current = false;
     abortRef.current?.abort();
     setConvertStatus('Cancelling…');
-  };
-
-  const onConvertDidDismiss = () => {
-    if (!openShareAfterConvertRef.current) return;
-    openShareAfterConvertRef.current = false;
-    void (async () => {
-      // Wait out interstitial (if any) + Ionic modal teardown before share sheet.
-      try {
-        await interstitialPromiseRef.current;
-      } catch {
-        // Ad failure must not block share.
-      }
-      await waitForModalHandoff();
-      setShareOpen(true);
-    })();
   };
 
   const onCreateStatus = async () => {
@@ -196,13 +171,11 @@ const Home: React.FC = () => {
 
     const controller = new AbortController();
     abortRef.current = controller;
-    openShareAfterConvertRef.current = false;
     setBusy(true);
     setConvertProgress(0);
     setConvertStatus('Uploading & converting…');
     setConvertOpen(true);
 
-    // Fire interstitial in parallel with convert; we await it before share.
     interstitialPromiseRef.current = shouldShowAds
       ? adsManager.showConvertInterstitial().catch((err) => {
           console.warn('[Ads] convert interstitial failed', err);
@@ -214,30 +187,37 @@ const Home: React.FC = () => {
         source: selectedMedia,
         statusLengthSec,
         canExportHd,
+        authToken: token ?? undefined,
         signal: controller.signal,
         onProgress: (p) => {
           setConvertProgress(p);
           if (p < 0.25) setConvertStatus('Uploading video…');
-          else if (p < 0.85) setConvertStatus('Converting to HD…');
-          else setConvertStatus('Saving…');
+          else if (p < 0.75) setConvertStatus('Converting to HD…');
+          else setConvertStatus('Sending to WhatsApp…');
         },
       });
       setConvertProgress(1);
-      setShareUri(exported.outputUri);
-      openShareAfterConvertRef.current = true;
       setConvertOpen(false);
-      // Safety: if IonModal never fires onDidDismiss, still open the share sheet.
-      window.setTimeout(() => {
-        if (openShareAfterConvertRef.current) {
-          onConvertDidDismiss();
-        }
-      }, 600);
-      setToast({
-        open: true,
-        message: `Saved to Gallery · ${exported.statusLengthSec}s ready`,
-      });
+
+      try {
+        await interstitialPromiseRef.current;
+      } catch {
+        // ignore ad failures
+      }
+
+      if (exported.deliveredVia === 'whatsapp') {
+        setDeliveredOpen(true);
+        setToast({
+          open: true,
+          message: 'Sent — check your WhatsApp',
+        });
+      } else {
+        setToast({
+          open: true,
+          message: `Saved to Gallery · ${exported.statusLengthSec}s ready`,
+        });
+      }
     } catch (err) {
-      openShareAfterConvertRef.current = false;
       setConvertOpen(false);
       if (isAbortError(err)) {
         setToast({ open: true, message: 'Convert cancelled' });
@@ -251,76 +231,6 @@ const Home: React.FC = () => {
       abortRef.current = null;
       setBusy(false);
       setConvertOpen(false);
-    }
-  };
-
-  const closeShareSheet = () => {
-    setShareOpen(false);
-  };
-
-  const onPostToStatus = async () => {
-    if (!shareUri) return;
-    setShareBusy(true);
-    try {
-      const shared = await videoGeneratorService.shareToWhatsAppStatus(shareUri);
-      setShareOpen(false);
-      setToast({
-        open: true,
-        message: shared
-          ? 'Opened WhatsApp Status'
-          : 'Could not open Status — try Gallery share',
-      });
-    } catch (err) {
-      setToast({
-        open: true,
-        message: err instanceof Error ? err.message : 'Could not open WhatsApp Status',
-      });
-    } finally {
-      setShareBusy(false);
-    }
-  };
-
-  const onBestQuality = async () => {
-    if (!shareUri) return;
-    setShareBusy(true);
-    try {
-      const shared = await videoGeneratorService.shareViaHdChatThenStatus(shareUri);
-      setShareOpen(false);
-      setToast({
-        open: true,
-        message: shared
-          ? 'Send with HD, then Forward → My Status'
-          : 'Could not open WhatsApp — try again from Gallery',
-      });
-    } catch (err) {
-      setToast({
-        open: true,
-        message: err instanceof Error ? err.message : 'Could not open WhatsApp',
-      });
-    } finally {
-      setShareBusy(false);
-    }
-  };
-
-  const onShareToFolder = async () => {
-    if (!shareUri) return;
-    setShareBusy(true);
-    try {
-      const shared = await videoGeneratorService.shareForPcOrNetwork(shareUri);
-      setShareOpen(false);
-      setToast({
-        open: true,
-        message: shared
-          ? 'Saved path ready — open on PC → web.whatsapp.com'
-          : 'Share unavailable on this device',
-      });
-    } catch (err) {
-      setToast({
-        open: true,
-        message: err instanceof Error ? err.message : 'Could not open share sheet',
-      });
-    } finally {
-      setShareBusy(false);
     }
   };
 
@@ -381,17 +291,11 @@ const Home: React.FC = () => {
           progress={convertProgress}
           statusLabel={convertStatus}
           onCancel={onCancelConvert}
-          onDidDismiss={onConvertDidDismiss}
         />
 
-        <StatusShareSheet
-          open={shareOpen}
-          fileUri={shareUri}
-          busy={shareBusy}
-          onDismiss={closeShareSheet}
-          onPostToStatus={onPostToStatus}
-          onBestQuality={onBestQuality}
-          onShareToFolder={onShareToFolder}
+        <WhatsAppDeliveredModal
+          open={deliveredOpen}
+          onDismiss={() => setDeliveredOpen(false)}
         />
 
         <IonToast

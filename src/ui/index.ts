@@ -9,6 +9,7 @@ export { TrialProgressBar } from './TrialProgressBar';
 export { UploadDropZone } from './UploadDropZone';
 export { ConvertButton } from './ConvertButton';
 export { StatusShareSheet } from './StatusShareSheet';
+export { WhatsAppDeliveredModal } from './WhatsAppDeliveredModal';
 export { VideoTimelineThumbnails } from './VideoTimelineThumbnails';
 export { GalleryVideoThumb } from './GalleryVideoThumb';
 export { ConvertProgressModal } from './ConvertProgressModal';

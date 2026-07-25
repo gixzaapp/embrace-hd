@@ -23,6 +23,8 @@ export type GenerateStatusOptions = {
   source: MediaSource;
   /** From entitlement rules — expired trial blocks export */
   canExportHd?: boolean;
+  /** Session token for authenticated backend WhatsApp delivery */
+  authToken?: string;
   onProgress?: (progress: number) => void;
   signal?: AbortSignal;
 };
@@ -39,7 +41,8 @@ export class VideoGeneratorService {
     project: VideoProject,
     overrides?: Partial<StatusExportOptions>,
     onProgress?: (progress: number) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    authToken?: string
   ) {
     const options: StatusExportOptions = {
       ...appConfig.defaults.statusExport,
@@ -49,7 +52,8 @@ export class VideoGeneratorService {
       project,
       options,
       onProgress,
-      signal
+      signal,
+      authToken
     );
   }
 
@@ -99,14 +103,17 @@ export class VideoGeneratorService {
   }
 
   /**
-   * Export selected media to WhatsApp-ready HD Status, save to phone + gallery.
+   * Export selected media to WhatsApp-ready HD.
+   * With backend enabled: converts on server and delivers via WhatsApp (no local file).
+   * Offline / local mode: encodes on device and saves to gallery.
    */
   async generate(options: GenerateStatusOptions): Promise<{
     projectId: string;
-    outputUri: string;
     statusLengthSec: StatusLengthSec;
     title: string;
-    galleryItem: GalleryItem;
+    deliveredVia: 'whatsapp' | 'file';
+    outputUri?: string;
+    galleryItem?: GalleryItem;
   }> {
     const statusLengthSec = options.statusLengthSec ?? appConfig.defaults.statusLengthSec;
     const canExportHd = options.canExportHd ?? true;
@@ -135,7 +142,8 @@ export class VideoGeneratorService {
         statusLengthSec,
       },
       options.onProgress,
-      options.signal
+      options.signal,
+      options.authToken
     );
 
     if (options.signal?.aborted) {
@@ -144,6 +152,15 @@ export class VideoGeneratorService {
 
     if (job.status === 'failed') {
       throw new Error(job.error ?? 'HD export failed');
+    }
+
+    if (job.deliveredVia === 'whatsapp') {
+      return {
+        projectId: project.id,
+        statusLengthSec,
+        title: project.title,
+        deliveredVia: 'whatsapp',
+      };
     }
 
     if (!job.outputUri || job.outputUri.startsWith('file://embrace-hd/')) {
@@ -162,6 +179,7 @@ export class VideoGeneratorService {
       statusLengthSec,
       title: project.title,
       galleryItem,
+      deliveredVia: 'file',
     };
   }
 
@@ -175,6 +193,14 @@ export class VideoGeneratorService {
     statusLengthSec: StatusLengthSec;
   }> {
     const exported = await this.generate(options);
+
+    if (exported.deliveredVia === 'whatsapp' || !exported.outputUri) {
+      return {
+        projectId: exported.projectId,
+        shared: true,
+        statusLengthSec: exported.statusLengthSec,
+      };
+    }
 
     let shared = false;
     try {

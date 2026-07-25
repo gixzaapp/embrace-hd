@@ -106,12 +106,23 @@ export class VideoEngine {
 
       if (isBackendEnabled()) {
         onProgress?.(0.15);
-        const remote = await exportViaBackend({
+        const authToken = options?.authToken;
+        if (!authToken) {
+          return {
+            id: jobId,
+            projectId: composition.project.id,
+            status: 'failed',
+            progress: 0,
+            error: 'Sign in required for HD convert',
+          };
+        }
+        await exportViaBackend({
           sourceUri: source.uri,
           mimeType: source.mimeType,
           preset: encode.preset,
           statusLengthSec: maxDurationSec,
           delivery: 'status',
+          authToken,
           onProgress: (p) => onProgress?.(p),
           signal: options?.signal,
         });
@@ -121,7 +132,9 @@ export class VideoEngine {
           projectId: composition.project.id,
           status: 'ready',
           progress: 1,
-          outputUri: remote.localUri,
+          deliveredVia: 'whatsapp',
+          // No local file — delivered on WhatsApp
+          outputUri: undefined,
         };
       }
 

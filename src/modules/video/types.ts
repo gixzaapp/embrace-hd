@@ -23,4 +23,6 @@ export type EncodeOptions = {
   audioBitrateKbps: number;
   /** Optional cancel for backend / long encodes */
   signal?: AbortSignal;
+  /** Session token — required when backend delivers via WhatsApp */
+  authToken?: string;
 };

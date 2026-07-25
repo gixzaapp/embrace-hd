@@ -1,12 +1,15 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { HttpError } from '../middleware/errorHandler.js';
-import { enqueueExportJob, getExportJob } from '../services/exportJobs.js';
+import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import {
-  getExportPath,
+  enqueueExportJob,
+  getExportJob,
+  publicExportJob,
+} from '../services/exportJobs.js';
+import {
   getUploadsDir,
   type ExportDelivery,
   type ExportPreset,
@@ -49,17 +52,22 @@ const fieldsSchema = z.object({
 
 /**
  * POST /v1/export
- * multipart: video (file) + preset + statusLengthSec + delivery
- * Returns 202 immediately; poll GET /v1/export/jobs/:jobId until done.
- * (Keeps the HTTP request under ALB/CloudFront idle timeouts.)
+ * Auth required. multipart: video + preset + statusLengthSec + delivery
+ * Encodes then sends the MP4 to the user's WhatsApp (no file download).
  */
-exportRouter.post('/', (req, res, next) => {
+exportRouter.post('/', requireAuth, (req, res, next) => {
   upload.single('video')(req, res, (err) => {
     if (err) {
       next(new HttpError(400, err.message || 'Upload failed'));
       return;
     }
     void (async () => {
+      const authed = req as AuthedRequest;
+      const user = authed.authUser;
+      if (!user) {
+        throw new HttpError(401, 'Unauthorized');
+      }
+
       const file = req.file;
       if (!file) {
         throw new HttpError(400, 'video file is required (field name: video)');
@@ -72,57 +80,58 @@ exportRouter.post('/', (req, res, next) => {
       }
 
       const { preset, statusLengthSec, delivery } = parsed.data;
-      const job = await enqueueExportJob({
-        inputPath: file.path,
-        preset: preset as ExportPreset,
-        statusLengthSec: statusLengthSec as 30 | 60,
-        delivery: delivery as ExportDelivery,
-      });
+      try {
+        const job = await enqueueExportJob({
+          inputPath: file.path,
+          preset: preset as ExportPreset,
+          statusLengthSec: statusLengthSec as 30 | 60,
+          delivery: delivery as ExportDelivery,
+          user,
+        });
 
-      res.status(202).json({
-        jobId: job.jobId,
-        status: job.status,
-        statusPath: `/v1/export/jobs/${job.jobId}`,
-        preset: job.preset,
-        statusLengthSec: job.statusLengthSec,
-        delivery: job.delivery,
-      });
+        res.status(202).json({
+          jobId: job.jobId,
+          status: job.status,
+          statusPath: `/v1/export/jobs/${job.jobId}`,
+          preset: job.preset,
+          statusLengthSec: job.statusLengthSec,
+          delivery: job.delivery,
+          deliveredVia: 'whatsapp',
+        });
+      } catch (enqueueErr) {
+        fs.unlink(file.path, () => undefined);
+        const message =
+          enqueueErr instanceof Error ? enqueueErr.message : 'Could not start export';
+        throw new HttpError(400, message);
+      }
     })().catch(next);
   });
 });
 
 /**
- * GET /v1/export/jobs/:jobId — poll encode progress
+ * GET /v1/export/jobs/:jobId — poll encode + WhatsApp delivery
  */
-exportRouter.get('/jobs/:jobId', async (req, res, next) => {
+exportRouter.get('/jobs/:jobId', requireAuth, async (req, res, next) => {
   try {
     const job = await getExportJob(req.params.jobId);
     if (!job) {
       throw new HttpError(404, 'Export job not found');
     }
-    res.json(job);
+    const authed = req as AuthedRequest;
+    if (job.userId && authed.authUser && job.userId !== authed.authUser.id) {
+      throw new HttpError(404, 'Export job not found');
+    }
+    res.json(publicExportJob(job));
   } catch (err) {
     next(err);
   }
 });
 
 /**
- * GET /v1/export/:filename — re-download a previously exported file
+ * File download disabled — converted videos are delivered on WhatsApp only.
  */
-exportRouter.get('/:filename', (req, res, next) => {
-  try {
-    const filename = path.basename(req.params.filename);
-    if (!filename.endsWith('.mp4')) {
-      throw new HttpError(400, 'Invalid export filename');
-    }
-    const full = getExportPath(filename);
-    if (!fs.existsSync(full)) {
-      throw new HttpError(404, 'Export not found');
-    }
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    fs.createReadStream(full).pipe(res);
-  } catch (err) {
-    next(err);
-  }
+exportRouter.get('/:filename', (_req, res) => {
+  res.status(410).json({
+    error: 'Direct download removed — check WhatsApp for your converted video',
+  });
 });

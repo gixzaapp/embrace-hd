@@ -28,6 +28,8 @@ export type RenderJob = {
   status: RenderJobStatus;
   progress: number;
   outputUri?: string;
+  /** Backend sent the file on WhatsApp instead of returning a local file */
+  deliveredVia?: 'whatsapp' | 'file';
   error?: string;
   /** @deprecated Watermark burn-in removed; kept optional for old callers */
   watermarkApplied?: boolean;

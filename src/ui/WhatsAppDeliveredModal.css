@@ -1,0 +1,58 @@
+.wa-delivered-modal {
+  --width: min(88vw, 380px);
+  --height: auto;
+  --border-radius: 18px;
+  --background: transparent;
+  --box-shadow: none;
+}
+
+.wa-delivered-modal::part(content) {
+  width: var(--width);
+  max-width: var(--width);
+  height: auto;
+  margin: auto;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0b1326;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.wa-delivered-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 20px 20px;
+  color: #e8eefc;
+}
+
+.wa-delivered-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #14b8a6;
+  font-weight: 600;
+}
+
+.wa-delivered-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #f8fafc;
+}
+
+.wa-delivered-body {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: #a8b4c8;
+}
+
+.wa-delivered-cta {
+  --background: #14b8a6;
+  --background-activated: #0d9488;
+  --color: #042f2e;
+  font-weight: 600;
+  margin-top: 4px;
+}
