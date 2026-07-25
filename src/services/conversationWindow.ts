@@ -12,6 +12,15 @@ export type ConversationWindowResponse = {
 };
 
 export function getClientBusinessWhatsAppE164(): string | null {
+  // Must match server WHATSAPP_BUSINESS_E164 (Cloud API / WABA number).
+  // Do NOT use VITE_WHATSAPP_ENROLL_NUMBER — that can be a different line.
+  const raw = import.meta.env.VITE_WHATSAPP_BUSINESS_NUMBER?.trim();
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  return digits ? `+${digits}` : null;
+}
+
+export function getClientEnrollWhatsAppE164(): string | null {
   const raw = import.meta.env.VITE_WHATSAPP_ENROLL_NUMBER?.trim();
   if (!raw) return null;
   const digits = raw.replace(/\D/g, '');

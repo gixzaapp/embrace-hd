@@ -15,8 +15,13 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
   /** Must be "true" to use the Node backend (off by default for local testing) */
   readonly VITE_BACKEND_ENABLED?: string;
-  /** WhatsApp number for Register → Join the app (E.164 digits, e.g. 447867057315) */
+  /** WhatsApp enroll / “Join the app” number (E.164). May differ from business Cloud API number. */
   readonly VITE_WHATSAPP_ENROLL_NUMBER?: string;
+  /**
+   * WhatsApp Business Cloud API display number (E.164) for opening the 24h chat window.
+   * Must match backend WHATSAPP_BUSINESS_E164 — not the enroll number if they differ.
+   */
+  readonly VITE_WHATSAPP_BUSINESS_NUMBER?: string;
 }
 
 interface ImportMeta {

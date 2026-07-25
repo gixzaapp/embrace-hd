@@ -35,7 +35,7 @@ Server listens on `http://localhost:8787` by default.
 | `WHATSAPP_OTP_TEMPLATE` | Approved authentication template name for business-initiated OTP (empty → free-form text) |
 | `WHATSAPP_OTP_TEMPLATE_LANG` | Template language code (default `en_US`) |
 | `WHATSAPP_OTP_TEMPLATE_HAS_BUTTON` | `false` if the template has no copy-code button (default `true`) |
-| `WHATSAPP_BUSINESS_E164` | Public business number (E.164) for `wa.me` deep links when opening a chat |
+| `WHATSAPP_BUSINESS_E164` | Cloud API / WABA display number (E.164) for `wa.me` when opening the 24h window. Must be the number that receives inbound webhooks — not a separate enroll line if different. |
 | `AUTH_OTP_TTL_SEC` | OTP lifetime in seconds (default `300`) |
 | `SESSION_TTL_DAYS` | Session token lifetime in days (default `30`) |
 | `AUTH_ALLOW_OTP_HINT` | When `true` (default), mock OTP responses may include `otpHint` for local testing. Set `false` in production. |

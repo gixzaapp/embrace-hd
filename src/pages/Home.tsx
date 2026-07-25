@@ -142,7 +142,7 @@ const Home: React.FC = () => {
             setToast({
               open: true,
               message:
-                'WhatsApp business number is not configured. Contact support.',
+                'Set WHATSAPP_BUSINESS_E164 on the server (Cloud API number, not enroll).',
             });
             return;
           }
@@ -153,7 +153,7 @@ const Home: React.FC = () => {
           setToast({
             open: true,
             message:
-              'Send the message in WhatsApp, then return here and tap Convert to HD again.',
+              'Message the business WhatsApp number, wait a moment, then tap Convert again.',
           });
           return;
         }

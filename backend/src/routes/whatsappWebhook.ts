@@ -60,6 +60,11 @@ whatsappWebhookRouter.post('/webhook', (req, res) => {
   // Acknowledge immediately so Meta does not retry
   res.sendStatus(200);
 
+  const body = req.body as { object?: string; entry?: unknown[] } | undefined;
+  console.info(
+    `[WhatsApp webhook] POST object=${body?.object ?? 'none'} entries=${body?.entry?.length ?? 0}`
+  );
+
   void handleWebhookPayload(req.body).catch((err) => {
     console.error('[WhatsApp webhook] handler error', err);
   });
@@ -82,7 +87,10 @@ whatsappWebhookRouter.get(
 );
 
 async function handleWebhookPayload(body: unknown): Promise<void> {
-  if (!body || typeof body !== 'object') return;
+  if (!body || typeof body !== 'object') {
+    console.warn('[WhatsApp webhook] empty body');
+    return;
+  }
   const payload = body as {
     object?: string;
     entry?: Array<{
@@ -90,16 +98,26 @@ async function handleWebhookPayload(body: unknown): Promise<void> {
     }>;
   };
 
-  if (payload.object !== 'whatsapp_business_account') return;
+  if (payload.object !== 'whatsapp_business_account') {
+    console.warn(`[WhatsApp webhook] ignored object=${payload.object}`);
+    return;
+  }
 
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
-      if (change.field && change.field !== 'messages') continue;
       const value = change.value;
-      if (!value?.messages?.length) continue;
+      const messages = value?.messages ?? [];
+      if (!messages.length) {
+        // Status receipts also use field=messages but with `statuses` instead
+        continue;
+      }
 
-      for (const message of value.messages) {
-        await handleInboundMessage(message, value);
+      console.info(
+        `[WhatsApp webhook] ${messages.length} inbound message(s) field=${change.field ?? 'n/a'}`
+      );
+
+      for (const message of messages) {
+        await handleInboundMessage(message, value!);
       }
     }
   }
@@ -109,7 +127,10 @@ async function handleInboundMessage(
   message: WaTextMessage,
   value: WaChangeValue
 ): Promise<void> {
-  if (!message.from) return;
+  if (!message.from) {
+    console.warn('[WhatsApp webhook] message missing from');
+    return;
+  }
 
   const phoneE164 = normalizePhoneE164(message.from);
   if (!phoneE164) {
@@ -118,7 +139,16 @@ async function handleInboundMessage(
   }
 
   // Any inbound message type refreshes the 24h window for known users.
-  await touchLastInboundWhatsApp(phoneE164);
+  const touched = await touchLastInboundWhatsApp(phoneE164);
+  if (touched) {
+    console.info(
+      `[WhatsApp webhook] window refreshed ${redactPhone(phoneE164)} user=${touched.id}`
+    );
+  } else {
+    console.warn(
+      `[WhatsApp webhook] inbound ${redactPhone(phoneE164)} — no matching user (login phone must match)`
+    );
+  }
 
   if (message.type !== 'text' || !message.text?.body) {
     return;
