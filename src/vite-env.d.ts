@@ -13,6 +13,12 @@ interface ImportMetaEnv {
   readonly VITE_ADMOB_TEST_MODE?: string;
   /** Embrace HD Node backend, e.g. http://10.0.2.2:8787 for Android emulator */
   readonly VITE_API_BASE_URL?: string;
+  /**
+   * Cloudflare Worker upload gateway (edge). When set, videos upload here instead of
+   * directly to VITE_API_BASE_URL — fixes India→Germany timeouts.
+   * e.g. https://upload.embraceapp.co.uk
+   */
+  readonly VITE_UPLOAD_GATEWAY_URL?: string;
   /** Must be "true" to use the Node backend (off by default for local testing) */
   readonly VITE_BACKEND_ENABLED?: string;
   /** WhatsApp enroll / “Join the app” number (E.164). May differ from business Cloud API number. */

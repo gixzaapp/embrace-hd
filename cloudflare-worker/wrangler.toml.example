@@ -1,0 +1,19 @@
+# Cloudflare Worker — Embrace HD upload gateway
+#
+# Deploy with Wrangler after creating an R2 bucket (e.g. embrace-hd-videos).
+# Copy upload-gateway.js into your worker entry (or set main = upload-gateway.js).
+
+name = "embrace-hd-upload"
+main = "upload-gateway.js"
+compatibility_date = "2024-11-01"
+
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "embrace-hd-videos"
+
+[vars]
+# Set secrets via: wrangler secret put WORKER_HETZNER_SECRET
+# Public URL of this worker (custom domain or workers.dev)
+WORKER_PUBLIC_URL = "https://upload.embraceapp.co.uk"
+# Hetzner API origin (no trailing slash)
+HETZNER_BASE_URL = "https://api.embraceapp.co.uk"

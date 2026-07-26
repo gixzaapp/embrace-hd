@@ -25,6 +25,12 @@ export type BackendExportResult = {
   engine: 'backend-ffmpeg';
 };
 
+function getUploadGatewayUrl(): string | null {
+  const raw = import.meta.env.VITE_UPLOAD_GATEWAY_URL?.trim();
+  if (!raw) return null;
+  return raw.replace(/\/$/, '');
+}
+
 async function uriToBlob(uri: string): Promise<Blob> {
   const local = await ensureLocalMediaFile(uri);
   const src = Capacitor.isNativePlatform()
@@ -39,8 +45,9 @@ async function uriToBlob(uri: string): Promise<Blob> {
 }
 
 /**
- * Upload video to Node backend for FFmpeg convert + WhatsApp delivery.
- * Does not download the result — the MP4 is sent to the user's WhatsApp.
+ * Upload video for FFmpeg convert + WhatsApp delivery.
+ * When VITE_UPLOAD_GATEWAY_URL is set, streams to Cloudflare (edge) then polls Hetzner.
+ * Otherwise uploads multipart directly to the API (fine for LAN / nearby regions).
  */
 export async function exportViaBackend(
   request: BackendExportRequest
@@ -69,6 +76,89 @@ export async function exportViaBackend(
     throw new DOMException('Export cancelled', 'AbortError');
   }
 
+  const gateway = getUploadGatewayUrl();
+  const accepted = gateway
+    ? await uploadViaGateway(gateway, blob, request)
+    : await uploadDirect(base, blob, request);
+
+  if (!accepted.jobId) {
+    throw new Error('Backend did not return a job id');
+  }
+
+  request.onProgress?.(0.35);
+  const job = await pollExportJob(base, accepted.jobId, request);
+  request.onProgress?.(1);
+
+  return {
+    deliveredVia: 'whatsapp',
+    preset: (job.preset === '720p' || job.preset === '1080p'
+      ? job.preset
+      : request.preset === '720p' || request.preset === '1080p'
+        ? request.preset
+        : '720p') as HdPresetKey,
+    statusLengthSec: job.statusLengthSec || request.statusLengthSec,
+    sizeBytes: job.sizeBytes || 0,
+    engine: 'backend-ffmpeg',
+  };
+}
+
+async function uploadViaGateway(
+  gatewayBase: string,
+  blob: Blob,
+  request: BackendExportRequest
+): Promise<{ jobId?: string }> {
+  request.onProgress?.(0.15);
+
+  let tick = 0.18;
+  const pulse = window.setInterval(() => {
+    tick = Math.min(0.7, tick + 0.03);
+    request.onProgress?.(tick);
+  }, 700);
+
+  let res: Response;
+  try {
+    res = await fetch(`${gatewayBase}/upload`, {
+      method: 'PUT',
+      body: blob,
+      signal: request.signal,
+      headers: {
+        Authorization: `Bearer ${request.authToken}`,
+        'Content-Type': request.mimeType || 'video/mp4',
+        'X-Embrace-Preset': request.preset,
+        'X-Embrace-Status-Length': String(request.statusLengthSec),
+        'X-Embrace-Delivery': request.delivery ?? 'status',
+      },
+    });
+  } finally {
+    window.clearInterval(pulse);
+  }
+
+  if (!res.ok) {
+    let message = `Upload failed (${res.status})`;
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          const data = JSON.parse(text) as { error?: string };
+          message = data.error || text.slice(0, 200);
+        } catch {
+          message = text.slice(0, 200);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError(message, res.status);
+  }
+
+  return (await res.json()) as { jobId?: string; fileName?: string };
+}
+
+async function uploadDirect(
+  apiBase: string,
+  blob: Blob,
+  request: BackendExportRequest
+): Promise<{ jobId?: string }> {
   request.onProgress?.(0.2);
   const form = new FormData();
   form.append('video', blob, 'input.mp4');
@@ -84,10 +174,10 @@ export async function exportViaBackend(
 
   let res: Response;
   try {
-    res = await fetch(`${base}/v1/export`, {
+    res = await fetch(`${apiBase}/v1/export`, {
       method: 'POST',
       body: form,
-      signal,
+      signal: request.signal,
       headers: {
         Authorization: `Bearer ${request.authToken}`,
       },
@@ -107,31 +197,7 @@ export async function exportViaBackend(
     throw new ApiError(message, res.status);
   }
 
-  request.onProgress?.(0.35);
-  const accepted = (await res.json()) as {
-    jobId?: string;
-    status?: string;
-    statusPath?: string;
-  };
-
-  if (!accepted.jobId) {
-    throw new Error('Backend did not return a job id');
-  }
-
-  const job = await pollExportJob(base, accepted.jobId, request);
-  request.onProgress?.(1);
-
-  return {
-    deliveredVia: 'whatsapp',
-    preset: (job.preset === '720p' || job.preset === '1080p'
-      ? job.preset
-      : request.preset === '720p' || request.preset === '1080p'
-        ? request.preset
-        : '720p') as HdPresetKey,
-    statusLengthSec: job.statusLengthSec || request.statusLengthSec,
-    sizeBytes: job.sizeBytes || 0,
-    engine: 'backend-ffmpeg',
-  };
+  return (await res.json()) as { jobId?: string };
 }
 
 type ExportJobPollResponse = {

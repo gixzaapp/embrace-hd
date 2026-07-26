@@ -11,6 +11,7 @@ import {
   type ExportPresetChoice,
 } from './exportVideo.js';
 import { deliverExportVideoToWhatsApp } from './whatsappMedia.js';
+import { pullGatewayVideo } from './uploadGateway.js';
 import {
   isConversationWindowOpen,
   type AuthUser,
@@ -195,6 +196,63 @@ export async function enqueueExportJob(options: {
       console.error('[ExportJob] unhandled', job.jobId, err);
     }
   );
+
+  return job;
+}
+
+/**
+ * Cloudflare gateway notify: create job immediately, pull video in background, then encode.
+ */
+export async function enqueueRemoteExportJob(options: {
+  downloadUrl: string;
+  fileName: string;
+  preset: ExportPresetChoice;
+  statusLengthSec: 30 | 60;
+  delivery: ExportDelivery;
+  user: AuthUser;
+}): Promise<ExportJob> {
+  if (!isConversationWindowOpen(options.user.lastInboundWhatsAppAt)) {
+    throw new Error(
+      'WhatsApp chat window is closed — message the business number, then try again'
+    );
+  }
+
+  const now = new Date().toISOString();
+  const job: ExportJob = {
+    jobId: randomUUID(),
+    status: 'queued',
+    preset: options.preset,
+    statusLengthSec: options.statusLengthSec,
+    delivery: options.delivery,
+    userId: options.user.id,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await persist(job);
+
+  void (async () => {
+    let inputPath: string | undefined;
+    try {
+      inputPath = await pullGatewayVideo({
+        downloadUrl: options.downloadUrl,
+        fileName: options.fileName,
+      });
+      await runExportJob(job.jobId, inputPath, options.user.phoneE164);
+    } catch (err) {
+      console.error('[ExportJob] remote pull/run failed', job.jobId, err);
+      const current = await getExportJob(job.jobId);
+      if (current && current.status !== 'done') {
+        current.status = 'failed';
+        current.error =
+          err instanceof Error ? err.message : 'Remote export failed';
+        current.updatedAt = new Date().toISOString();
+        await persist(current);
+      }
+      if (inputPath) {
+        await fs.unlink(inputPath).catch(() => undefined);
+      }
+    }
+  })();
 
   return job;
 }
