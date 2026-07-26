@@ -443,6 +443,17 @@ a {
   padding-left: 1.2rem;
 }
 
+.prose ol {
+  padding-left: 1.2rem;
+  margin: 0 0 1rem;
+}
+
+.prose .btn {
+  display: inline-flex;
+  margin: 0.35rem 0 1rem;
+  text-decoration: none;
+}
+
 .prose a {
   color: var(--lime);
   text-decoration: underline;

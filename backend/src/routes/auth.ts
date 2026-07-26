@@ -7,6 +7,7 @@ import {
   type AuthedRequest,
 } from '../middleware/requireAuth.js';
 import { generateOtpCode, saveOtp, verifyOtp } from '../services/otpStore.js';
+import { assertCanRequestOtp } from '../services/otpRateLimit.js';
 import { createSession, revokeSession } from '../services/sessionStore.js';
 import {
   ensureUser,
@@ -70,6 +71,8 @@ authRouter.post('/request-otp', async (req, res, next) => {
         mode: 'register',
       });
     }
+
+    await assertCanRequestOtp(phoneE164);
 
     const code = generateOtpCode();
     await saveOtp({

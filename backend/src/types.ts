@@ -10,6 +10,10 @@ export type AppConfig = {
     lifetimePlan: boolean;
     imageToVideo: boolean;
     nativeWatermark: boolean;
+    /** Settings → Log out button */
+    showLogout: boolean;
+    /** Settings → Unlock Premium / Subscription plans */
+    showUnlockPremium: boolean;
   };
   minAppVersion: string;
   updatedAt: string;

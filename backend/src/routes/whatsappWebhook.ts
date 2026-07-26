@@ -3,6 +3,8 @@ import { env } from '../config/env.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import { conversationWindowStatus, CHAT_WINDOW_OPEN_REPLY } from '../services/conversationWindow.js';
 import { generateOtpCode, saveOtp } from '../services/otpStore.js';
+import { assertCanRequestOtp } from '../services/otpRateLimit.js';
+import { HttpError } from '../middleware/errorHandler.js';
 import {
   findUserByPhone,
   normalizePhoneE164,
@@ -224,6 +226,20 @@ async function issueAndReplyOtp(options: {
   mode: 'login' | 'register';
   name?: string;
 }): Promise<void> {
+  try {
+    await assertCanRequestOtp(options.phoneE164);
+  } catch (err) {
+    const message =
+      err instanceof HttpError
+        ? err.message
+        : 'Too many OTP requests. Please try again later.';
+    await sendWhatsAppText({
+      phoneE164: options.phoneE164,
+      body: message,
+    });
+    return;
+  }
+
   const code = generateOtpCode();
   await saveOtp({
     phoneE164: options.phoneE164,

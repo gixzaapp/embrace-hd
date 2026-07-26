@@ -18,7 +18,7 @@ import type { EncodeOptions, VideoComposition } from './types';
  * Prefer backend FFmpeg when enabled; otherwise on-device compression.
  */
 export class VideoEngine {
-  async createProject(title: string, preset: HdPresetKey = '720p'): Promise<VideoProject> {
+  async createProject(title: string, preset: HdPresetKey = '1080p'): Promise<VideoProject> {
     const now = new Date().toISOString();
     return {
       id: createId('project'),

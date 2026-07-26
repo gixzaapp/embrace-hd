@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { IonButton, IonContent, IonPage, IonToast } from '@ionic/react';
+import { Capacitor } from '@capacitor/core';
 import {
   AppHeader,
   StatusLengthPicker,
@@ -16,8 +17,15 @@ import {
 import type { StatusLengthSec } from '../core';
 import './Settings.css';
 
+const DELETE_ACCOUNT_URL = 'https://embraceapp.co.uk/delete-account.html';
+
 const Settings: React.FC = () => {
-  const { shouldShowAds, isSubscribed } = useTrial();
+  const {
+    shouldShowAds,
+    isSubscribed,
+    showLogout,
+    showUnlockPremium,
+  } = useTrial();
   const { user, logout } = useAuth();
   const [statusLengthSec, setStatusLengthSec] = useState<StatusLengthSec>(
     getPreferredStatusLength
@@ -37,6 +45,14 @@ const Settings: React.FC = () => {
     }
   };
 
+  const openDeleteAccountPage = () => {
+    if (Capacitor.isNativePlatform()) {
+      window.location.href = DELETE_ACCOUNT_URL;
+      return;
+    }
+    window.open(DELETE_ACCOUNT_URL, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <IonPage>
       <IonContent
@@ -54,16 +70,30 @@ const Settings: React.FC = () => {
                 <p className="settings-account-name">{user.name}</p>
               ) : null}
               <p className="settings-account-phone">{user?.phoneE164 ?? '—'}</p>
+              {showLogout ? (
+                <IonButton
+                  expand="block"
+                  fill="outline"
+                  color="medium"
+                  className="settings-logout-btn"
+                  disabled={loggingOut}
+                  onClick={() => void handleLogout()}
+                >
+                  {loggingOut ? 'Signing out…' : 'Log out'}
+                </IonButton>
+              ) : null}
               <IonButton
                 expand="block"
-                fill="outline"
-                color="medium"
-                className="settings-logout-btn"
-                disabled={loggingOut}
-                onClick={() => void handleLogout()}
+                fill="clear"
+                color="danger"
+                className="settings-delete-btn"
+                onClick={openDeleteAccountPage}
               >
-                {loggingOut ? 'Signing out…' : 'Log out'}
+                Delete account
               </IonButton>
+              <p className="settings-hint settings-hint--tight">
+                Opens our website so you can request permanent account and data deletion.
+              </p>
             </div>
           </section>
 
@@ -88,12 +118,14 @@ const Settings: React.FC = () => {
             </p>
           </section>
 
-          <section className="settings-section">
-            <h3 className="settings-section-title font-label-sm">
-              {isSubscribed ? 'Subscription' : 'Unlock Premium'}
-            </h3>
-            <SubscriptionPlans forceShow />
-          </section>
+          {showUnlockPremium ? (
+            <section className="settings-section">
+              <h3 className="settings-section-title font-label-sm">
+                {isSubscribed ? 'Subscription' : 'Unlock Premium'}
+              </h3>
+              <SubscriptionPlans forceShow />
+            </section>
+          ) : null}
         </div>
 
         <IonToast

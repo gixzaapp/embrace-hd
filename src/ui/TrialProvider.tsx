@@ -35,6 +35,10 @@ type TrialContextValue = {
   shouldApplyWatermark: boolean;
   /** Trial active or expired → Google Ads */
   shouldShowAds: boolean;
+  /** Settings → Log out (from backend featureFlags.showLogout) */
+  showLogout: boolean;
+  /** Settings → Unlock Premium (from backend featureFlags.showUnlockPremium) */
+  showUnlockPremium: boolean;
   countdownLabel: string | null;
   /** True when last refresh used the Node backend */
   serverVerified: boolean;
@@ -56,6 +60,8 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [status, setStatus] = useState<TrialStatus | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [serverFlags, setServerFlags] = useState<EntitlementFlags | null>(null);
+  const [showLogout, setShowLogout] = useState(false);
+  const [showUnlockPremium, setShowUnlockPremium] = useState(false);
   const [serverVerified, setServerVerified] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +71,8 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setError(null);
     setServerVerified(false);
     setServerFlags(null);
+    setShowLogout(false);
+    setShowUnlockPremium(false);
 
     try {
       const deviceId = await getOrCreateDeviceId();
@@ -95,6 +103,8 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             willRenew: remote.subscription.willRenew,
           });
           setServerFlags(remote.flags);
+          setShowLogout(Boolean(remote.config.featureFlags?.showLogout));
+          setShowUnlockPremium(Boolean(remote.config.featureFlags?.showUnlockPremium));
           setServerVerified(true);
         } catch (apiErr) {
           console.warn('[TrialProvider] Backend entitlements failed; using local', apiErr);
@@ -105,6 +115,8 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setStatus(idleTrial);
       setSubscription(null);
       setServerFlags(null);
+      setShowLogout(false);
+      setShowUnlockPremium(false);
     } finally {
       setLoading(false);
     }
@@ -138,11 +150,23 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       premiumUnlocked: flags.canExportHd,
       shouldApplyWatermark: false,
       shouldShowAds: flags.shouldShowAds,
+      showLogout,
+      showUnlockPremium,
       countdownLabel,
       serverVerified,
       refresh,
     };
-  }, [status, subscription, loading, error, refresh, serverFlags, serverVerified]);
+  }, [
+    status,
+    subscription,
+    loading,
+    error,
+    refresh,
+    serverFlags,
+    serverVerified,
+    showLogout,
+    showUnlockPremium,
+  ]);
 
   return <TrialContext.Provider value={value}>{children}</TrialContext.Provider>;
 };

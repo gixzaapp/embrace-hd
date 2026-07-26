@@ -73,6 +73,14 @@ CREATE TABLE IF NOT EXISTS export_jobs (
 
 CREATE INDEX IF NOT EXISTS export_jobs_status_idx ON export_jobs (status);
 CREATE INDEX IF NOT EXISTS export_jobs_updated_at_idx ON export_jobs (updated_at);
+
+CREATE TABLE IF NOT EXISTS otp_request_log (
+  id            BIGSERIAL PRIMARY KEY,
+  phone_lookup  TEXT NOT NULL,
+  requested_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS otp_request_log_lookup_time_idx
+  ON otp_request_log (phone_lookup, requested_at DESC);
 `;
 
 export function getPool(): pg.Pool {
@@ -126,6 +134,18 @@ export async function migratePostgres(): Promise<void> {
   await query(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_phone_lookup_uidx ON users (phone_lookup)`
   );
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS otp_request_log (
+      id            BIGSERIAL PRIMARY KEY,
+      phone_lookup  TEXT NOT NULL,
+      requested_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS otp_request_log_lookup_time_idx
+      ON otp_request_log (phone_lookup, requested_at DESC)
+  `);
 
   // Old otps used phone_e164 as PK — rebuild if phone_lookup is missing.
   const { rows: otpCols } = await query<{ column_name: string }>(

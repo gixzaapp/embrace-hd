@@ -9,13 +9,13 @@ import {
 export const appConfig = {
   app: APP,
   defaults: {
-    // Clideo / WhatsApp Status: 720p survives Status better than 1080p/4K.
-    preset: '720p' as const,
+    // Full HD Status encode (WhatsApp may still re-encode on post).
+    preset: '1080p' as const,
     statusLengthSec: OUTPUT_REQUIREMENTS.defaultStatusLengthSec,
     statusExport: {
       fitToStatusDuration: true,
       verticalCrop: true,
-      preset: '720p' as const,
+      preset: '1080p' as const,
       statusLengthSec: OUTPUT_REQUIREMENTS.defaultStatusLengthSec,
     },
   },

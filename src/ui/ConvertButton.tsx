@@ -10,7 +10,7 @@ type ConvertButtonProps = {
 
 export const ConvertButton: React.FC<ConvertButtonProps> = ({
   label,
-  sublabel = 'HD 720p / 1080p · 30s / 60s · on-device',
+  sublabel = 'Full HD 1080p · 30s / 60s · delivered on WhatsApp',
   disabled,
   busy,
   onClick,

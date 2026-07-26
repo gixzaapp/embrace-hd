@@ -37,10 +37,14 @@ Server listens on `http://localhost:8787` by default.
 | `WHATSAPP_OTP_TEMPLATE_HAS_BUTTON` | `false` if the template has no copy-code button (default `true`) |
 | `WHATSAPP_BUSINESS_E164` | Cloud API / WABA display number (E.164) for `wa.me` when opening the 24h window. Must be the number that receives inbound webhooks — not a separate enroll line if different. |
 | `AUTH_OTP_TTL_SEC` | OTP lifetime in seconds (default `300`) |
+| `AUTH_OTP_MAX_PER_WINDOW` | Max OTP sends per phone per window (default `2`) |
+| `AUTH_OTP_WINDOW_SEC` | Rate-limit window in seconds (default `3600` = 1 hour) |
+| `AUTH_OTP_COOLDOWN_SEC` | Minimum seconds between OTP sends for the same phone (default `60`) |
 | `SESSION_TTL_DAYS` | Session token lifetime in days (default `30`) |
 | `AUTH_ALLOW_OTP_HINT` | When `true` (default), mock OTP responses may include `otpHint` for local testing. Set `false` in production. |
 | `AUTH_TEST_OTP` | Fixed OTP that always verifies (e.g. `123456`) — **testing only**, leave empty in production. |
 | `REQUEST_LOG_INTERVAL_SEC` | Request-count log interval in seconds (default `60`, `0` disables) |
+| `ADS_ENABLED` | Optional AdMob kill switch. When set (`true`/`false`), overrides `app_config.adsEnabled` in the DB. Leave unset to use the DB value only. |
 | `STORAGE_DRIVER` | `file` \| `dynamodb` \| `postgres` (use `postgres` on Hetzner) |
 | `PHONE_DATA_KEY` | **Required.** 32-byte hex (64 chars) master key for AES-256-GCM encryption of WhatsApp numbers at rest + HMAC blind index. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Keep secret; rotating without re-encrypt breaks lookups. |
 | `DB_HOST` | Postgres host (`localhost` on host; `host.docker.internal` from Compose) |

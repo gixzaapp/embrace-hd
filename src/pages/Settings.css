@@ -77,3 +77,12 @@
 .settings-logout-btn {
   margin-top: 4px;
 }
+
+.settings-delete-btn {
+  margin-top: 0;
+}
+
+.settings-hint--tight {
+  margin-top: 4px;
+  padding: 0;
+}

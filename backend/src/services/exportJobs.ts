@@ -232,8 +232,8 @@ async function runExportJob(
       const lengthLabel = Math.round(part.lengthSec ?? job.statusLengthSec);
       const caption =
         parts.length > 1
-          ? `Embrace HD · part ${i + 1}/${parts.length} · ${lengthLabel}s (${job.preset})`
-          : `Your Embrace HD ${job.preset} · ${lengthLabel}s video is ready.`;
+          ? `Embrace HD ${job.preset} · part ${i + 1}/${parts.length} · ${lengthLabel}s is ready. Open it here and post to your Status.`
+          : `Your Embrace HD ${job.preset} · ${lengthLabel}s video is ready. Open it here and post to your Status.`;
 
       await deliverExportVideoToWhatsApp({
         phoneE164,

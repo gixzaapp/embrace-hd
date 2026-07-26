@@ -63,6 +63,12 @@ export const env = {
   whatsappBusinessE164: process.env.WHATSAPP_BUSINESS_E164?.trim() ?? '',
   authOtpTtlSec: Number(process.env.AUTH_OTP_TTL_SEC ?? 300),
   sessionTtlDays: Number(process.env.SESSION_TTL_DAYS ?? 30),
+  /** Max OTP send requests per phone within the rate window */
+  authOtpMaxPerWindow: Number(process.env.AUTH_OTP_MAX_PER_WINDOW ?? 2),
+  /** Rate-limit window in seconds (default 1 hour) */
+  authOtpWindowSec: Number(process.env.AUTH_OTP_WINDOW_SEC ?? 3600),
+  /** Minimum seconds between OTP requests for the same phone */
+  authOtpCooldownSec: Number(process.env.AUTH_OTP_COOLDOWN_SEC ?? 60),
   /** Return OTP in API JSON when mock / local testing */
   authAllowOtpHint: process.env.AUTH_ALLOW_OTP_HINT !== 'false',
   /** Fixed OTP that always verifies (testing only — leave empty to disable) */
@@ -93,4 +99,18 @@ export const env = {
    * for WhatsApp phone numbers at rest. Required when storing auth users.
    */
   phoneDataKey: process.env.PHONE_DATA_KEY?.trim() ?? '',
+  /**
+   * Master AdMob switch. When set, overrides app_config.adsEnabled from the DB.
+   * unset → use DB / default; false/0/off → ads off; true/1/on → ads on.
+   */
+  adsEnabledOverride: parseAdsEnabledOverride(process.env.ADS_ENABLED),
 };
+
+/** null = do not override DB; boolean = force that value */
+function parseAdsEnabledOverride(raw: string | undefined): boolean | null {
+  const v = raw?.trim().toLowerCase();
+  if (!v) return null;
+  if (v === 'false' || v === '0' || v === 'off' || v === 'no') return false;
+  if (v === 'true' || v === '1' || v === 'on' || v === 'yes') return true;
+  return null;
+}

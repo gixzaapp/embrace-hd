@@ -17,10 +17,18 @@ const DEFAULT_CONFIG: AppConfig = {
     lifetimePlan: true,
     imageToVideo: false,
     nativeWatermark: false,
+    showLogout: false,
+    showUnlockPremium: false,
   },
   minAppVersion: '0.1.0',
   updatedAt: new Date().toISOString(),
 };
+
+/** Apply ADS_ENABLED env override when set (takes precedence over DB). */
+function withAdsOverride(config: AppConfig): AppConfig {
+  if (env.adsEnabledOverride === null) return config;
+  return { ...config, adsEnabled: env.adsEnabledOverride };
+}
 
 /** Ensure the local data dir exists (used for file storage + video exports). */
 export async function ensureDataDir(): Promise<void> {
@@ -30,16 +38,20 @@ export async function ensureDataDir(): Promise<void> {
 export async function getAppConfig(): Promise<AppConfig> {
   const stored = await configRepo.get();
   if (!stored) {
-    const seeded = { ...DEFAULT_CONFIG };
-    await configRepo.put(seeded);
+    const seeded = withAdsOverride({ ...DEFAULT_CONFIG });
+    await configRepo.put({
+      ...seeded,
+      // Persist DB default without baking a temporary env kill-switch into storage
+      adsEnabled: DEFAULT_CONFIG.adsEnabled,
+    });
     return seeded;
   }
-  return {
+  return withAdsOverride({
     ...DEFAULT_CONFIG,
     ...stored,
     products: { ...DEFAULT_CONFIG.products, ...stored.products },
     featureFlags: { ...DEFAULT_CONFIG.featureFlags, ...stored.featureFlags },
-  };
+  });
 }
 
 export { DEFAULT_CONFIG };

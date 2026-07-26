@@ -11,7 +11,9 @@
   "featureFlags": {
     "lifetimePlan": true,
     "imageToVideo": false,
-    "nativeWatermark": false
+    "nativeWatermark": false,
+    "showLogout": false,
+    "showUnlockPremium": false
   },
   "minAppVersion": "0.1.0",
   "updatedAt": "2026-07-12T00:00:00.000Z"

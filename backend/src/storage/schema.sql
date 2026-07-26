@@ -63,3 +63,11 @@ CREATE TABLE IF NOT EXISTS export_jobs (
 
 CREATE INDEX IF NOT EXISTS export_jobs_status_idx ON export_jobs (status);
 CREATE INDEX IF NOT EXISTS export_jobs_updated_at_idx ON export_jobs (updated_at);
+
+CREATE TABLE IF NOT EXISTS otp_request_log (
+  id            BIGSERIAL PRIMARY KEY,
+  phone_lookup  TEXT NOT NULL,
+  requested_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS otp_request_log_lookup_time_idx
+  ON otp_request_log (phone_lookup, requested_at DESC);

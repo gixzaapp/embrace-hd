@@ -7,6 +7,7 @@ Static marketing site:
 | Home | `index.html` |
 | About | `about.html` |
 | Privacy Policy | `privacy.html` |
+| Delete account | `delete-account.html` |
 | Terms of Service | `terms.html` |
 | Contact | `contact.html` |
 
@@ -27,5 +28,6 @@ Point `embraceapp.co.uk` (or `www`) at that host. Play Console / AdMob privacy l
 
 - `https://embraceapp.co.uk/privacy.html`
 - `https://embraceapp.co.uk/terms.html`
+- `https://embraceapp.co.uk/delete-account.html` (Play Console account deletion URL)
 
 Contact email used on the site: `info@embraceapp.co.uk`.

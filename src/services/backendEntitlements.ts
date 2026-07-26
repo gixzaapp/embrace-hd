@@ -13,6 +13,8 @@ export type RemoteAppConfig = {
     lifetimePlan: boolean;
     imageToVideo: boolean;
     nativeWatermark: boolean;
+    showLogout: boolean;
+    showUnlockPremium: boolean;
   };
   minAppVersion: string;
   updatedAt: string;
