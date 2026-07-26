@@ -1,3 +1,4 @@
+import type { HdPresetChoice, HdPresetKey } from './constants';
 import {
   INPUT_REQUIREMENTS,
   OUTPUT_REQUIREMENTS,
@@ -6,11 +7,10 @@ import {
   type InputMediaKind,
   type StatusLengthSec,
 } from './requirements';
-import type { HdPresetKey } from './constants';
 
 export type ExportConstraints = {
   durationSec: number;
-  preset: HdPresetKey;
+  preset: HdPresetChoice;
   /** Cap used for this export (defaults to absolute max) */
   maxDurationSec?: StatusLengthSec;
   estimatedSizeBytes?: number;
@@ -59,9 +59,10 @@ export function meetsSizeCap(sizeBytes: number): boolean {
 export function validateExportConstraints(constraints: ExportConstraints): string[] {
   const errors: string[] = [];
   const maxDurationSec = constraints.maxDurationSec ?? OUTPUT_REQUIREMENTS.maxDurationSec;
+  const allowed: readonly string[] = [...OUTPUT_REQUIREMENTS.allowedPresets, 'auto'];
 
-  if (!OUTPUT_REQUIREMENTS.allowedPresets.includes(constraints.preset)) {
-    errors.push(`Preset must be one of: ${OUTPUT_REQUIREMENTS.allowedPresets.join(', ')}`);
+  if (!allowed.includes(constraints.preset)) {
+    errors.push(`Preset must be one of: ${allowed.join(', ')}`);
   }
   if (!meetsDurationCap(constraints.durationSec, maxDurationSec)) {
     errors.push(`Duration must be between 0 and ${maxDurationSec}s`);
@@ -79,12 +80,13 @@ export function validateExportConstraints(constraints: ExportConstraints): strin
 /** Suggest encode settings that honor size + quality floor */
 export function suggestEncodeSettings(
   durationSec: number,
-  preset: HdPresetKey,
+  preset: HdPresetChoice,
   maxDurationSec: StatusLengthSec = OUTPUT_REQUIREMENTS.maxDurationSec
 ) {
+  const concrete: HdPresetKey = preset === 'auto' ? '720p' : preset;
   const capMbps = maxBitrateMbpsForDuration(durationSec, undefined, maxDurationSec);
-  const qualityFloorMbps = preset === '1080p' ? 10 : 6;
-  const qualityCeilingMbps = preset === '1080p' ? 14 : 8;
+  const qualityFloorMbps = concrete === '1080p' ? 10 : 6;
+  const qualityCeilingMbps = concrete === '1080p' ? 14 : 8;
   const bitrateMbps = Math.max(
     qualityFloorMbps,
     Math.min(Math.max(capMbps, qualityFloorMbps), qualityCeilingMbps)

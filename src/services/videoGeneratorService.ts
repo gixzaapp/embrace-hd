@@ -1,7 +1,7 @@
 import {
   appConfig,
   createId,
-  type HdPresetKey,
+  type HdPresetChoice,
   type MediaSource,
   type StatusExportOptions,
   type StatusLengthSec,
@@ -33,7 +33,7 @@ export type GenerateStatusOptions = {
  * Orchestrates create → render → save → WhatsApp-ready share flow.
  */
 export class VideoGeneratorService {
-  async createNewProject(title = 'Untitled HD Video', preset?: HdPresetKey): Promise<VideoProject> {
+  async createNewProject(title = 'Untitled HD Video', preset?: HdPresetChoice): Promise<VideoProject> {
     return videoEngine.createProject(title, preset ?? appConfig.defaults.preset);
   }
 

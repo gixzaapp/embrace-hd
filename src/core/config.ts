@@ -9,13 +9,13 @@ import {
 export const appConfig = {
   app: APP,
   defaults: {
-    // Full HD Status encode (WhatsApp may still re-encode on post).
-    preset: '1080p' as const,
+    // Backend probes source and picks 720p/1080p (falls back to 720p).
+    preset: 'auto' as const,
     statusLengthSec: OUTPUT_REQUIREMENTS.defaultStatusLengthSec,
     statusExport: {
       fitToStatusDuration: true,
       verticalCrop: true,
-      preset: '1080p' as const,
+      preset: 'auto' as const,
       statusLengthSec: OUTPUT_REQUIREMENTS.defaultStatusLengthSec,
     },
   },

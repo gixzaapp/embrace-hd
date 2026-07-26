@@ -2,9 +2,10 @@ import {
   INPUT_REQUIREMENTS,
   appConfig,
   createId,
+  resolveLocalPreset,
   suggestEncodeSettings,
   validateExportConstraints,
-  type HdPresetKey,
+  type HdPresetChoice,
   type RenderJob,
   type VideoProject,
 } from '../../core';
@@ -18,7 +19,10 @@ import type { EncodeOptions, VideoComposition } from './types';
  * Prefer backend FFmpeg when enabled; otherwise on-device compression.
  */
 export class VideoEngine {
-  async createProject(title: string, preset: HdPresetKey = '1080p'): Promise<VideoProject> {
+  async createProject(
+    title: string,
+    preset: HdPresetChoice = appConfig.defaults.preset
+  ): Promise<VideoProject> {
     const now = new Date().toISOString();
     return {
       id: createId('project'),
@@ -140,7 +144,7 @@ export class VideoEngine {
 
       const compressed = await compressionEngine.compress({
         sourcePath: source.uri,
-        preset: encode.preset,
+        preset: resolveLocalPreset(encode.preset),
         maxDurationSec,
         onProgress: (info) => {
           if (typeof info.percent === 'number') {

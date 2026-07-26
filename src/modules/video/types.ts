@@ -1,4 +1,4 @@
-import type { HdPresetKey, MediaSource, VideoProject } from '../../core';
+import type { HdPresetChoice, MediaSource, VideoProject } from '../../core';
 
 export type VideoComposition = {
   project: VideoProject;
@@ -14,7 +14,7 @@ export type TimelineClip = {
 };
 
 export type EncodeOptions = {
-  preset: HdPresetKey;
+  preset: HdPresetChoice;
   fps: 24 | 30;
   bitrateMbps: number;
   crf: number;

@@ -12,7 +12,7 @@ import {
 import {
   getUploadsDir,
   type ExportDelivery,
-  type ExportPreset,
+  type ExportPresetChoice,
 } from '../services/exportVideo.js';
 
 export const exportRouter = Router();
@@ -45,7 +45,8 @@ const upload = multer({
 });
 
 const fieldsSchema = z.object({
-  preset: z.enum(['720p', '1080p']).default('720p'),
+  /** auto = pick from source resolution (falls back to 720p) */
+  preset: z.enum(['auto', '720p', '1080p']).default('auto'),
   statusLengthSec: z.coerce.number().refine((n) => n === 30 || n === 60),
   delivery: z.enum(['status', 'chat-hd']).default('status'),
 });
@@ -83,7 +84,7 @@ exportRouter.post('/', requireAuth, (req, res, next) => {
       try {
         const job = await enqueueExportJob({
           inputPath: file.path,
-          preset: preset as ExportPreset,
+          preset: preset as ExportPresetChoice,
           statusLengthSec: statusLengthSec as 30 | 60,
           delivery: delivery as ExportDelivery,
           user,

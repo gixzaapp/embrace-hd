@@ -7,6 +7,9 @@ export const HD_PRESETS = {
 
 export type HdPresetKey = keyof typeof HD_PRESETS;
 
+/** Backend picks from source; falls back to 720p if probe fails. */
+export type HdPresetChoice = HdPresetKey | 'auto';
+
 export const APP = {
   name: 'Embrace HD',
   tagline: 'HD Video Generator — WhatsApp Ready',

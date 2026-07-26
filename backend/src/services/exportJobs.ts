@@ -8,6 +8,7 @@ import {
   getExportPath,
   type ExportDelivery,
   type ExportPreset,
+  type ExportPresetChoice,
 } from './exportVideo.js';
 import { deliverExportVideoToWhatsApp } from './whatsappMedia.js';
 import {
@@ -26,7 +27,8 @@ export type ExportJob = {
   /** @deprecated Prefer deliveredVia=whatsapp; kept for legacy clients */
   downloadPath?: string;
   deliveredVia?: 'whatsapp' | 'download';
-  preset: ExportPreset;
+  /** Requested choice; resolved to 720p/1080p once encode starts. */
+  preset: ExportPresetChoice;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
   sizeBytes?: number;
@@ -64,7 +66,7 @@ function mapJobRow(row: {
     filename: row.filename ?? undefined,
     downloadPath,
     deliveredVia: downloadPath ? 'download' : row.filename ? 'whatsapp' : undefined,
-    preset: row.preset as ExportPreset,
+    preset: row.preset as ExportPresetChoice,
     statusLengthSec: row.status_length_sec as 30 | 60,
     delivery: row.delivery as ExportDelivery,
     sizeBytes:
@@ -164,7 +166,7 @@ export async function getExportJob(jobId: string): Promise<ExportJob | null> {
  */
 export async function enqueueExportJob(options: {
   inputPath: string;
-  preset: ExportPreset;
+  preset: ExportPresetChoice;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
   user: AuthUser;
@@ -223,6 +225,9 @@ async function runExportJob(
       throw new Error('Export produced no video parts');
     }
 
+    const resolvedPreset: ExportPreset = parts[0].preset;
+    job.preset = resolvedPreset;
+
     let totalBytes = 0;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
@@ -232,8 +237,8 @@ async function runExportJob(
       const lengthLabel = Math.round(part.lengthSec ?? job.statusLengthSec);
       const caption =
         parts.length > 1
-          ? `Embrace HD ${job.preset} · part ${i + 1}/${parts.length} · ${lengthLabel}s is ready. Open it here and post to your Status.`
-          : `Your Embrace HD ${job.preset} · ${lengthLabel}s video is ready. Open it here and post to your Status.`;
+          ? `Embrace HD · part ${i + 1}/${parts.length} · ${lengthLabel}s is ready. Open it here and post to your Status.`
+          : `Your Embrace HD · ${lengthLabel}s video is ready. Open it here and post to your Status.`;
 
       await deliverExportVideoToWhatsApp({
         phoneE164,

@@ -33,7 +33,7 @@ export const UploadDropZone: React.FC<UploadDropZoneProps> = ({
       </p>
     </div>
     <div className="upload-zone-chips">
-      <span className="upload-zone-chip font-label-sm">720p / 1080p</span>
+      <span className="upload-zone-chip font-label-sm">Auto HD</span>
       <span className="upload-zone-chip font-label-sm">9:16</span>
     </div>
   </button>

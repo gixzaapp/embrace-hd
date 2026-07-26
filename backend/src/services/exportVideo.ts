@@ -9,12 +9,15 @@ import { HttpError } from '../middleware/errorHandler.js';
 
 export type ExportPreset = '720p' | '1080p';
 
+/** Client may send `auto` — backend picks from source resolution (falls back to 720p). */
+export type ExportPresetChoice = ExportPreset | 'auto';
+
 /** How the file will be posted into WhatsApp */
 export type ExportDelivery = 'status' | 'chat-hd';
 
 export type ExportOptions = {
   inputPath: string;
-  preset: ExportPreset;
+  preset: ExportPresetChoice;
   statusLengthSec: 30 | 60;
   /**
    * `status`  — ≤16MB @ ~2.2 Mbps (WhatsApp Status ceiling)
@@ -22,6 +25,40 @@ export type ExportOptions = {
    */
   delivery?: ExportDelivery;
 };
+
+/**
+ * Pick 720p vs 1080p from probed source size.
+ * - Explicit 720p/1080p → honor
+ * - auto + short side ≥ 1000 → 1080p (typical Full HD / 4K phone)
+ * - auto + smaller / missing probe → 720p (Status-friendly default)
+ */
+export function chooseExportPreset(
+  requested: ExportPresetChoice,
+  probe: ProbeInfo | null
+): ExportPreset {
+  if (requested === '720p' || requested === '1080p') {
+    return requested;
+  }
+
+  if (!probe || !probe.width || !probe.height) {
+    console.info('[Export] auto preset → 720p (probe unavailable)');
+    return '720p';
+  }
+
+  const shown = displaySize(probe);
+  const shortSide = Math.min(shown.width, shown.height);
+  if (shortSide >= 1000) {
+    console.info(
+      `[Export] auto preset → 1080p (source ${shown.width}x${shown.height})`
+    );
+    return '1080p';
+  }
+
+  console.info(
+    `[Export] auto preset → 720p (source ${shown.width}x${shown.height})`
+  );
+  return '720p';
+}
 
 export type ExportResult = {
   jobId: string;
@@ -523,22 +560,24 @@ export async function exportWhatsAppHdSegments(
 ): Promise<ExportResult[]> {
   const delivery: ExportDelivery = options.delivery ?? 'status';
   const table = delivery === 'status' ? STATUS_PRESETS : CHAT_HD_PRESETS;
-  const profile = table[options.preset];
-  if (!profile) {
-    throw new HttpError(400, 'preset must be 720p or 1080p');
-  }
 
   if (ffprobePath.path) {
     process.env.FFPROBE_PATH = ffprobePath.path;
   }
 
   const probe = await probeInput(options.inputPath);
+  const preset = chooseExportPreset(options.preset, probe);
+  const profile = table[preset];
+  if (!profile) {
+    throw new HttpError(400, 'preset must be 720p or 1080p');
+  }
+
   const durationSec = probe?.durationSec || options.statusLengthSec;
   const segments = buildExportSegments(durationSec, options.statusLengthSec);
   const jobId = randomUUID();
 
   console.log(
-    `[Export] ${segments.length} segment(s) from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
+    `[Export] ${segments.length} segment(s) ${preset} from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
   );
 
   const results: ExportResult[] = [];
@@ -547,7 +586,7 @@ export async function exportWhatsAppHdSegments(
     results.push(
       await exportOneSegment({
         inputPath: options.inputPath,
-        preset: options.preset,
+        preset,
         statusLengthSec: options.statusLengthSec,
         delivery,
         profile,

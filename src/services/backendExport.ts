@@ -1,12 +1,12 @@
 import { Capacitor } from '@capacitor/core';
 import { getApiBaseUrl, isBackendEnabled, ApiError } from './apiClient';
 import { ensureLocalMediaFile } from './localMediaPath';
-import type { HdPresetKey, StatusLengthSec } from '../core';
+import type { HdPresetChoice, HdPresetKey, StatusLengthSec } from '../core';
 
 export type BackendExportRequest = {
   sourceUri: string;
   mimeType?: string;
-  preset: HdPresetKey;
+  preset: HdPresetChoice;
   statusLengthSec: StatusLengthSec;
   /** chat-hd = high-bitrate master for HD→Forward; status = Status-matched */
   delivery?: 'status' | 'chat-hd';
@@ -123,7 +123,11 @@ export async function exportViaBackend(
 
   return {
     deliveredVia: 'whatsapp',
-    preset: job.preset || request.preset,
+    preset: (job.preset === '720p' || job.preset === '1080p'
+      ? job.preset
+      : request.preset === '720p' || request.preset === '1080p'
+        ? request.preset
+        : '720p') as HdPresetKey,
     statusLengthSec: job.statusLengthSec || request.statusLengthSec,
     sizeBytes: job.sizeBytes || 0,
     engine: 'backend-ffmpeg',
@@ -135,7 +139,7 @@ type ExportJobPollResponse = {
   status: 'queued' | 'processing' | 'done' | 'failed';
   error?: string;
   deliveredVia?: 'whatsapp' | 'download';
-  preset?: HdPresetKey;
+  preset?: HdPresetChoice;
   statusLengthSec?: StatusLengthSec;
   sizeBytes?: number;
 };

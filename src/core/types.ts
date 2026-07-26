@@ -1,4 +1,4 @@
-import type { HdPresetKey } from './constants';
+import type { HdPresetChoice, HdPresetKey } from './constants';
 import type { InputMediaKind, StatusLengthSec } from './requirements';
 
 export type MediaSource = {
@@ -11,7 +11,7 @@ export type MediaSource = {
 export type VideoProject = {
   id: string;
   title: string;
-  preset: HdPresetKey;
+  preset: HdPresetChoice;
   durationSec: number;
   /** Selected WhatsApp Status length cap (30 or 60) */
   statusLengthSec?: StatusLengthSec;
@@ -40,7 +40,7 @@ export type StatusExportOptions = {
   fitToStatusDuration: boolean;
   /** Crop to 9:16 for status */
   verticalCrop: boolean;
-  preset: HdPresetKey;
+  preset: HdPresetChoice;
   /** 30s or 60s status length */
   statusLengthSec: StatusLengthSec;
 };
@@ -52,3 +52,8 @@ export type SharePayload = {
   files?: string[];
   dialogTitle?: string;
 };
+
+/** Concrete canvas when `auto` is not yet resolved (local encode fallback). */
+export function resolveLocalPreset(preset: HdPresetChoice): HdPresetKey {
+  return preset === 'auto' ? '720p' : preset;
+}
