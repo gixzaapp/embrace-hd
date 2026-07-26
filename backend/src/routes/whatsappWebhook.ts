@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import { conversationWindowStatus, CHAT_WINDOW_OPEN_REPLY } from '../services/conversationWindow.js';
 import { generateOtpCode, saveOtp } from '../services/otpStore.js';
-import { assertCanRequestOtp } from '../services/otpRateLimit.js';
+import { assertCanRequestOtp, recordOtpRequest } from '../services/otpRateLimit.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import {
   findUserByPhone,
@@ -253,6 +253,7 @@ async function issueAndReplyOtp(options: {
     phoneE164: options.phoneE164,
     body: reply,
   });
+  await recordOtpRequest(options.phoneE164);
 
   if (!sent) {
     console.info(

@@ -146,6 +146,20 @@ export async function migratePostgres(): Promise<void> {
     CREATE INDEX IF NOT EXISTS otp_request_log_lookup_time_idx
       ON otp_request_log (phone_lookup, requested_at DESC)
   `);
+  // Table may have been created by superuser — ensure app role can use it
+  const role = env.dbUser.replace(/[^a-zA-Z0-9_]/g, '');
+  if (role) {
+    await query(
+      `GRANT SELECT, INSERT, DELETE ON TABLE otp_request_log TO "${role}"`
+    ).catch((err) => {
+      console.warn('[postgres] grant otp_request_log skipped', err);
+    });
+    await query(
+      `GRANT USAGE, SELECT ON SEQUENCE otp_request_log_id_seq TO "${role}"`
+    ).catch((err) => {
+      console.warn('[postgres] grant otp_request_log sequence skipped', err);
+    });
+  }
 
   // Old otps used phone_e164 as PK — rebuild if phone_lookup is missing.
   const { rows: otpCols } = await query<{ column_name: string }>(

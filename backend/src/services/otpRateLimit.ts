@@ -50,7 +50,6 @@ async function recordTimestamp(phoneLookup: string, atMs: number): Promise<void>
       `INSERT INTO otp_request_log (phone_lookup, requested_at) VALUES ($1, $2)`,
       [phoneLookup, new Date(atMs).toISOString()]
     );
-    // Prune old rows for this number (keep window + buffer)
     const pruneBefore = atMs - Math.max(env.authOtpWindowSec, 3600) * 2 * 1000;
     await query(
       `DELETE FROM otp_request_log WHERE phone_lookup = $1 AND requested_at < $2`,
@@ -67,17 +66,27 @@ async function recordTimestamp(phoneLookup: string, atMs: number): Promise<void>
 }
 
 /**
- * Limit OTP generation per phone number.
- * Defaults: max 2 requests / hour, and at least 60s between requests.
+ * Enforce OTP send limits for a phone number (does not write a log row yet).
+ * Defaults: max 2 / hour, 60s cooldown.
+ * DB errors soft-fail so login is never blocked by rate-limit storage issues.
  */
 export async function assertCanRequestOtp(phoneE164: string): Promise<void> {
   const max = Math.max(1, env.authOtpMaxPerWindow);
   const windowMs = Math.max(60, env.authOtpWindowSec) * 1000;
   const cooldownMs = Math.max(0, env.authOtpCooldownSec) * 1000;
   const now = Date.now();
-  const lookup = phoneLookupHash(phoneE164);
 
-  const recent = await listRecentTimestamps(lookup, now - windowMs);
+  let recent: number[];
+  try {
+    const lookup = phoneLookupHash(phoneE164);
+    recent = await listRecentTimestamps(lookup, now - windowMs);
+  } catch (err) {
+    console.error(
+      '[OTP rate limit] check failed — allowing OTP request',
+      err instanceof Error ? err.message : err
+    );
+    return;
+  }
 
   if (cooldownMs > 0 && recent.length > 0) {
     const last = recent[0];
@@ -104,6 +113,17 @@ export async function assertCanRequestOtp(phoneE164: string): Promise<void> {
       { retryAfterSec, limit: max, windowSec: env.authOtpWindowSec }
     );
   }
+}
 
-  await recordTimestamp(lookup, now);
+/** Persist a successful OTP send attempt for rate limiting. */
+export async function recordOtpRequest(phoneE164: string): Promise<void> {
+  try {
+    const lookup = phoneLookupHash(phoneE164);
+    await recordTimestamp(lookup, Date.now());
+  } catch (err) {
+    console.error(
+      '[OTP rate limit] record failed',
+      err instanceof Error ? err.message : err
+    );
+  }
 }
