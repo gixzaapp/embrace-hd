@@ -112,7 +112,7 @@ export function buildExportSegments(
  * - 720×1280 or 1080×1920 (9:16)
  * - H.264 High, CRF 16, VBV capped by WhatsApp file size (not a flat 2.2 Mbps)
  * - AAC-LC 192k / 48 kHz, +faststart
- * - x264 preset defaults to `slow` (override with FFMPEG_X264_PRESET)
+ * - x264 preset defaults to `veryfast` (override with FFMPEG_X264_PRESET)
  */
 type EncodeProfile = {
   width: number;
@@ -128,9 +128,9 @@ type EncodeProfile = {
   h264Level: string;
 };
 
-/** Quality-first default; set FFMPEG_X264_PRESET=veryfast if encode latency matters more. */
+/** Speed-first default for Hetzner; quality still comes from CRF + size-budget VBV. */
 function resolveX264Preset(): EncodeProfile['x264Preset'] {
-  const raw = (process.env.FFMPEG_X264_PRESET ?? 'slow').trim().toLowerCase();
+  const raw = (process.env.FFMPEG_X264_PRESET ?? 'veryfast').trim().toLowerCase();
   const allowed: EncodeProfile['x264Preset'][] = [
     'ultrafast',
     'superfast',
@@ -141,7 +141,7 @@ function resolveX264Preset(): EncodeProfile['x264Preset'] {
     'slow',
     'slower',
   ];
-  return (allowed.find((p) => p === raw) ?? 'slow') as EncodeProfile['x264Preset'];
+  return (allowed.find((p) => p === raw) ?? 'veryfast') as EncodeProfile['x264Preset'];
 }
 
 function waProfile(
@@ -405,8 +405,6 @@ function buildEncodeArgs(options: {
     'libx264',
     '-preset',
     options.profile.x264Preset,
-    '-tune',
-    'film',
     '-profile:v',
     'high',
     '-level',
@@ -420,16 +418,12 @@ function buildEncodeArgs(options: {
     options.vbv.maxrate,
     '-bufsize',
     options.vbv.bufsize,
-    '-x264-params',
-    'aq-mode=3:aq-strength=0.8:ref=5:me=umh:subme=9:trellis=2:psy-rd=1.0,0.15:deblock=-1,-1',
     '-r',
     '30',
     '-g',
     '60',
     '-keyint_min',
     '30',
-    '-bf',
-    '3',
     '-c:a',
     'aac',
     '-profile:a',
