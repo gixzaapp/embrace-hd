@@ -104,6 +104,16 @@ export const env = {
    * unset → use DB / default; false/0/off → ads off; true/1/on → ads on.
    */
   adsEnabledOverride: parseAdsEnabledOverride(process.env.ADS_ENABLED),
+  /**
+   * Shared secret with the Cloudflare upload gateway (X-Internal-Secret).
+   * Required for POST /v1/export/remote and for pulling videos from the gateway.
+   */
+  workerHetznerSecret: process.env.WORKER_HETZNER_SECRET?.trim() ?? '',
+  /**
+   * Public origin of the upload gateway (e.g. https://upload.embraceapp.co.uk).
+   * Used to allowlist downloadUrl hosts (SSRF protection).
+   */
+  uploadGatewayPublicUrl: process.env.UPLOAD_GATEWAY_PUBLIC_URL?.trim() ?? '',
 };
 
 /** null = do not override DB; boolean = force that value */

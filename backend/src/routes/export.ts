@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import {
   enqueueExportJob,
+  enqueueRemoteExportJob,
   getExportJob,
   publicExportJob,
 } from '../services/exportJobs.js';
@@ -14,6 +16,7 @@ import {
   type ExportDelivery,
   type ExportPresetChoice,
 } from '../services/exportVideo.js';
+import { isUploadGatewayConfigured } from '../services/uploadGateway.js';
 
 export const exportRouter = Router();
 
@@ -51,10 +54,33 @@ const fieldsSchema = z.object({
   delivery: z.enum(['status', 'chat-hd']).default('status'),
 });
 
+const remoteSchema = z.object({
+  fileName: z
+    .string()
+    .regex(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.mp4$/i,
+      'fileName must be <uuid>.mp4'
+    ),
+  downloadUrl: z.string().url(),
+  preset: z.enum(['auto', '720p', '1080p']).default('auto'),
+  statusLengthSec: z.coerce.number().refine((n) => n === 30 || n === 60),
+  delivery: z.enum(['status', 'chat-hd']).default('status'),
+});
+
+function requireWorkerSecret(req: AuthedRequest): void {
+  if (!isUploadGatewayConfigured()) {
+    throw new HttpError(503, 'Upload gateway is not configured on this server');
+  }
+  const secret = req.headers['x-internal-secret'];
+  if (typeof secret !== 'string' || secret !== env.workerHetznerSecret) {
+    throw new HttpError(401, 'Invalid or missing X-Internal-Secret');
+  }
+}
+
 /**
  * POST /v1/export
  * Auth required. multipart: video + preset + statusLengthSec + delivery
- * Encodes then sends the MP4 to the user's WhatsApp (no file download).
+ * Prefer Cloudflare gateway uploads in production (POST /v1/export/remote).
  */
 exportRouter.post('/', requireAuth, (req, res, next) => {
   upload.single('video')(req, res, (err) => {
@@ -107,6 +133,58 @@ exportRouter.post('/', requireAuth, (req, res, next) => {
       }
     })().catch(next);
   });
+});
+
+/**
+ * POST /v1/export/remote
+ * Called by the Cloudflare upload gateway after R2 has the file.
+ * Auth: user Bearer + X-Internal-Secret.
+ */
+exportRouter.post('/remote', requireAuth, async (req, res, next) => {
+  try {
+    const authed = req as AuthedRequest;
+    requireWorkerSecret(authed);
+    const user = authed.authUser;
+    if (!user) {
+      throw new HttpError(401, 'Unauthorized');
+    }
+
+    const parsed = remoteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Invalid remote export body', parsed.error.flatten());
+    }
+
+    const { fileName, downloadUrl, preset, statusLengthSec, delivery } =
+      parsed.data;
+
+    try {
+      const job = await enqueueRemoteExportJob({
+        fileName,
+        downloadUrl,
+        preset: preset as ExportPresetChoice,
+        statusLengthSec: statusLengthSec as 30 | 60,
+        delivery: delivery as ExportDelivery,
+        user,
+      });
+
+      res.status(202).json({
+        jobId: job.jobId,
+        status: job.status,
+        statusPath: `/v1/export/jobs/${job.jobId}`,
+        preset: job.preset,
+        statusLengthSec: job.statusLengthSec,
+        delivery: job.delivery,
+        deliveredVia: 'whatsapp',
+        fileName,
+      });
+    } catch (enqueueErr) {
+      const message =
+        enqueueErr instanceof Error ? enqueueErr.message : 'Could not start export';
+      throw new HttpError(400, message);
+    }
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
