@@ -3,6 +3,7 @@ export { AuthProvider, useAuth } from './AuthProvider';
 export { TrialCountdownBanner } from './TrialCountdownBanner';
 export { SubscriptionPlans } from './SubscriptionPlans';
 export { BottomBannerAd } from './BottomBannerAd';
+export { AppUpdateSnackbar } from './AppUpdateSnackbar';
 export { AppTabs } from './AppTabs';
 export { AppHeader } from './AppHeader';
 export { TrialProgressBar } from './TrialProgressBar';

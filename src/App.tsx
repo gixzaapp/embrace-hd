@@ -1,6 +1,6 @@
 import { IonApp, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { AppTabs, AuthProvider, TrialProvider } from './ui';
+import { AppTabs, AppUpdateSnackbar, AuthProvider, TrialProvider } from './ui';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -33,6 +33,7 @@ const App: React.FC = () => (
         <IonReactRouter>
           <AppTabs />
         </IonReactRouter>
+        <AppUpdateSnackbar />
       </TrialProvider>
     </AuthProvider>
   </IonApp>

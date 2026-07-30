@@ -6,12 +6,11 @@ import {
   type AuthUser,
 } from './userStore.js';
 
-const DEFAULT_PREFILL =
-  'Hi — please open my Embrace HD chat so I can convert videos.';
+const DEFAULT_PREFILL = 'Activate and start';
 
 /** Auto-reply after the user messages to open the 24h window (Convert flow). */
 export const CHAT_WINDOW_OPEN_REPLY =
-  'Chat open, go back and upload the video.';
+  'Activated, go back and upload the video.';
 
 export type ConversationWindowStatus = {
   open: boolean;
