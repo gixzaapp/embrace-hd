@@ -83,12 +83,40 @@ function mapJobRow(row: {
   };
 }
 
+async function ensureX264PresetColumn(): Promise<void> {
+  await query(
+    `ALTER TABLE export_jobs ADD COLUMN IF NOT EXISTS x264_preset TEXT DEFAULT 'veryfast'`
+  );
+  await query(
+    `UPDATE export_jobs SET x264_preset = 'veryfast' WHERE x264_preset IS NULL`
+  );
+  await query(
+    `ALTER TABLE export_jobs ALTER COLUMN x264_preset SET DEFAULT 'veryfast'`
+  );
+  await query(
+    `ALTER TABLE export_jobs ALTER COLUMN x264_preset SET NOT NULL`
+  );
+}
+
 async function persist(job: ExportJob): Promise<void> {
   jobs.set(job.jobId, job);
 
   if (usingPostgres) {
-    await query(
-      `INSERT INTO export_jobs (
+    const params = [
+      job.jobId,
+      job.status,
+      job.error ?? null,
+      job.filename ?? null,
+      job.downloadPath ?? null,
+      job.preset,
+      job.x264Preset,
+      job.statusLengthSec,
+      job.delivery,
+      job.sizeBytes ?? null,
+      job.createdAt,
+      job.updatedAt,
+    ];
+    const sql = `INSERT INTO export_jobs (
          job_id, status, error, filename, download_path,
          preset, x264_preset, status_length_sec, delivery, size_bytes, created_at, updated_at
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -102,22 +130,16 @@ async function persist(job: ExportJob): Promise<void> {
          status_length_sec = EXCLUDED.status_length_sec,
          delivery = EXCLUDED.delivery,
          size_bytes = EXCLUDED.size_bytes,
-         updated_at = EXCLUDED.updated_at`,
-      [
-        job.jobId,
-        job.status,
-        job.error ?? null,
-        job.filename ?? null,
-        job.downloadPath ?? null,
-        job.preset,
-        job.x264Preset,
-        job.statusLengthSec,
-        job.delivery,
-        job.sizeBytes ?? null,
-        job.createdAt,
-        job.updatedAt,
-      ]
-    );
+         updated_at = EXCLUDED.updated_at`;
+    try {
+      await query(sql, params);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/x264_preset/i.test(message)) throw err;
+      console.warn('[ExportJob] x264_preset missing — applying schema fix and retrying');
+      await ensureX264PresetColumn();
+      await query(sql, params);
+    }
     return;
   }
 

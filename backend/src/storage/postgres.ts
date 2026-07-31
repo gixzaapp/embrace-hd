@@ -72,6 +72,12 @@ CREATE TABLE IF NOT EXISTS export_jobs (
   updated_at          TIMESTAMPTZ NOT NULL
 );
 
+-- Existing DBs already have export_jobs without x264_preset — CREATE IF NOT EXISTS won't add it.
+ALTER TABLE export_jobs ADD COLUMN IF NOT EXISTS x264_preset TEXT DEFAULT 'veryfast';
+UPDATE export_jobs SET x264_preset = 'veryfast' WHERE x264_preset IS NULL;
+ALTER TABLE export_jobs ALTER COLUMN x264_preset SET DEFAULT 'veryfast';
+ALTER TABLE export_jobs ALTER COLUMN x264_preset SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS export_jobs_status_idx ON export_jobs (status);
 CREATE INDEX IF NOT EXISTS export_jobs_updated_at_idx ON export_jobs (updated_at);
 
@@ -132,8 +138,18 @@ export async function migratePostgres(): Promise<void> {
   await query(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_inbound_whatsapp_at TIMESTAMPTZ`
   );
+  // Idempotent upgrade for quality choice (safe if already present).
   await query(
-    `ALTER TABLE export_jobs ADD COLUMN IF NOT EXISTS x264_preset TEXT NOT NULL DEFAULT 'veryfast'`
+    `ALTER TABLE export_jobs ADD COLUMN IF NOT EXISTS x264_preset TEXT DEFAULT 'veryfast'`
+  );
+  await query(
+    `UPDATE export_jobs SET x264_preset = 'veryfast' WHERE x264_preset IS NULL`
+  );
+  await query(
+    `ALTER TABLE export_jobs ALTER COLUMN x264_preset SET DEFAULT 'veryfast'`
+  );
+  await query(
+    `ALTER TABLE export_jobs ALTER COLUMN x264_preset SET NOT NULL`
   );
   await query(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_phone_lookup_uidx ON users (phone_lookup)`
