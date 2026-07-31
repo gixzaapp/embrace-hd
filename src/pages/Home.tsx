@@ -42,6 +42,7 @@ function isAbortError(err: unknown): boolean {
 const Home: React.FC = () => {
   const {
     canExportHd,
+    canUse60sStatus,
     shouldShowAds,
     isTrialExpired,
     loading: trialLoading,
@@ -68,6 +69,8 @@ const Home: React.FC = () => {
     useState<ConvertPhase>('upload');
   const abortRef = useRef<AbortController | null>(null);
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
+  const contentRef = useRef<HTMLIonContentElement>(null);
+  const convertAnchorRef = useRef<HTMLDivElement>(null);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
   const [toast, setToast] = useState<{ open: boolean; message: string }>({
     open: false,
@@ -79,17 +82,46 @@ const Home: React.FC = () => {
     void adsManager.prepareConvertInterstitial().catch(() => undefined);
   }, [shouldShowAds]);
 
-  const controlsDisabled = busy || trialLoading || !canExportHd;
+  const scrollConvertIntoView = () => {
+    // Wait for timeline / layout to paint so the Convert button isn't still off-screen.
+    window.setTimeout(() => {
+      void (async () => {
+        const content = contentRef.current;
+        const anchor = convertAnchorRef.current;
+        if (!content || !anchor) return;
+        try {
+          const scrollEl = await content.getScrollElement();
+          const contentRect = scrollEl.getBoundingClientRect();
+          const anchorRect = anchor.getBoundingClientRect();
+          const nextTop =
+            scrollEl.scrollTop +
+            (anchorRect.bottom - contentRect.bottom) +
+            24;
+          await content.scrollToPoint(0, Math.max(0, nextTop), 450);
+        } catch {
+          anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      })();
+    }, 180);
+  };
+
+  // After pick (and again when duration/timeline settles), bring Convert into view.
+  useEffect(() => {
+    if (!selectedMedia?.uri) return;
+    scrollConvertIntoView();
+  }, [selectedMedia?.uri, videoDurationSec]);
+
+  // Trial ended → force 30s Status (60s requires Premium / active trial).
+  useEffect(() => {
+    if (canUse60sStatus) return;
+    if (statusLengthSec === 30) return;
+    setStatusLengthSec(30);
+    setPreferredStatusLength(30);
+  }, [canUse60sStatus, statusLengthSec]);
+
+  const controlsDisabled = busy || trialLoading;
 
   const onPickMedia = async () => {
-    if (!canExportHd) {
-      setToast({
-        open: true,
-        message: 'Trial expired — HD export is locked. Subscribe in Settings.',
-      });
-      return;
-    }
-
     setBusy(true);
     try {
       const media = await pickStatusMedia();
@@ -131,14 +163,6 @@ const Home: React.FC = () => {
   };
 
   const onCreateStatus = async () => {
-    if (!canExportHd) {
-      setToast({
-        open: true,
-        message: 'Trial expired — HD export is locked. Subscribe in Settings.',
-      });
-      return;
-    }
-
     if (!selectedMedia?.uri) {
       setToast({
         open: true,
@@ -202,6 +226,10 @@ const Home: React.FC = () => {
       return;
     }
 
+    const exportLengthSec: StatusLengthSec = canUse60sStatus
+      ? statusLengthSec
+      : 30;
+
     setEncodeQuality(quality);
     setQualityOpen(false);
 
@@ -212,7 +240,11 @@ const Home: React.FC = () => {
     setConvertOpen(true);
 
     interstitialPromiseRef.current = shouldShowAds
-      ? adsManager.showConvertInterstitial().catch((err) => {
+      ? (async () => {
+          // Let the convert progress UI paint briefly before the full-screen ad.
+          await new Promise((r) => setTimeout(r, 2000));
+          await adsManager.showConvertInterstitial();
+        })().catch((err) => {
           console.warn('[Ads] convert interstitial failed', err);
         })
       : Promise.resolve();
@@ -220,7 +252,7 @@ const Home: React.FC = () => {
     try {
       const exported = await videoGeneratorService.generate({
         source: selectedMedia,
-        statusLengthSec,
+        statusLengthSec: exportLengthSec,
         canExportHd,
         authToken: token ?? undefined,
         x264Preset: quality,
@@ -285,13 +317,12 @@ const Home: React.FC = () => {
     }
   };
 
-  const convertLabel = isTrialExpired
-    ? 'HD export locked'
-    : `Convert to HD · ${statusLengthSec}s`;
+  const convertLabel = `Convert to HD · ${statusLengthSec}s`;
 
   return (
     <IonPage>
       <IonContent
+        ref={contentRef}
         fullscreen
         className={`home-content${shouldShowAds ? ' home-content--with-ads' : ''}`}
       >
@@ -300,9 +331,9 @@ const Home: React.FC = () => {
         <div className="home-body">
           <TrialProgressBar />
 
-          {isTrialExpired ? (
+          {isTrialExpired && !canUse60sStatus ? (
             <p className="home-lock-note" role="status">
-              Trial ended — subscribe in Settings to unlock HD export.
+              Trial ended — convert with 30s Status. Subscribe to unlock 60s.
             </p>
           ) : null}
 
@@ -318,6 +349,14 @@ const Home: React.FC = () => {
               setStatusLengthSec(next);
               setPreferredStatusLength(next);
             }}
+            restrictedLengths={canUse60sStatus ? [] : [60]}
+            onRestrictedSelect={() => {
+              setToast({
+                open: true,
+                message:
+                  '60-second Status is locked after your trial. Convert with 30s, or subscribe in Settings to unlock 60s.',
+              });
+            }}
             disabled={controlsDisabled}
           />
 
@@ -329,12 +368,14 @@ const Home: React.FC = () => {
             />
           ) : null}
 
-          <ConvertButton
-            label={convertLabel}
-            busy={busy}
-            disabled={controlsDisabled || !selectedMedia}
-            onClick={onCreateStatus}
-          />
+          <div ref={convertAnchorRef} className="home-convert-anchor">
+            <ConvertButton
+              label={convertLabel}
+              busy={busy}
+              disabled={controlsDisabled || !selectedMedia}
+              onClick={onCreateStatus}
+            />
+          </div>
         </div>
 
         <QualityDecisionModal

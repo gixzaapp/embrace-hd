@@ -45,7 +45,7 @@ export const TrialCountdownBanner: React.FC = () => {
       <div className="trial-banner trial-banner--locked" role="status">
         <p className="trial-banner-title">Trial ended</p>
         <p className="trial-banner-body">
-          HD export locked. Ads remain until you subscribe.
+          Convert stays available at 30s. Unlock 60s with Premium — ads remain until you subscribe.
         </p>
       </div>
     );

@@ -27,3 +27,7 @@
   min-height: 40px;
   border-radius: 10px;
 }
+
+.status-length-picker ion-segment-button.status-length-restricted {
+  opacity: 0.55;
+}

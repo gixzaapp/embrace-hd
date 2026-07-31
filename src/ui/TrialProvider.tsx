@@ -27,10 +27,12 @@ type TrialContextValue = {
   isSubscribed: boolean;
   isTrialActive: boolean;
   isTrialExpired: boolean;
-  /** Trial active OR premium — HD export allowed */
+  /** Trial active OR always — HD convert allowed (length may be capped) */
   canExportHd: boolean;
   /** @deprecated use canExportHd */
   premiumUnlocked: boolean;
+  /** 60s Status — false after trial ends until Premium */
+  canUse60sStatus: boolean;
   /** Always false — watermark burn-in removed */
   shouldApplyWatermark: boolean;
   /** Trial active or expired → Google Ads */
@@ -148,6 +150,7 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       isTrialExpired: flags.isTrialExpired,
       canExportHd: flags.canExportHd,
       premiumUnlocked: flags.canExportHd,
+      canUse60sStatus: flags.canUse60sStatus,
       shouldApplyWatermark: false,
       shouldShowAds: flags.shouldShowAds,
       showLogout,
