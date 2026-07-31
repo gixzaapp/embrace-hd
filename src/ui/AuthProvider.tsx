@@ -7,6 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { IonToast } from '@ionic/react';
+import { ApiError } from '../services/apiClient';
 import {
   fetchAuthMe,
   logoutAuth,
@@ -41,9 +43,17 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function isInvalidSessionError(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403);
+}
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<{ open: boolean; message: string }>({
+    open: false,
+    message: '',
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -55,14 +65,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLoading(false);
         return;
       }
+
+      // Keep the local session while we verify — never blank the UI on offline.
+      setSession(stored);
+
       try {
         const me = await fetchAuthMe(stored.token);
         const next: AuthSession = { ...stored, user: me.user };
         await saveAuthSession(next);
         if (!cancelled) setSession(next);
-      } catch {
-        await clearAuthSession();
-        if (!cancelled) setSession(null);
+      } catch (err) {
+        if (isInvalidSessionError(err)) {
+          await clearAuthSession();
+          if (!cancelled) {
+            setSession(null);
+            setToast({
+              open: true,
+              message: 'Session expired — please sign in again',
+            });
+          }
+        } else if (!cancelled) {
+          // Offline / server error — stay signed in with cached user
+          setToast({
+            open: true,
+            message:
+              err instanceof ApiError && err.status === 0
+                ? 'No network — using offline session'
+                : 'Could not reach server — using offline session',
+          });
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -115,10 +146,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const refreshMe = useCallback(async () => {
     if (!session?.token) return;
-    const me = await fetchAuthMe(session.token);
-    const next: AuthSession = { ...session, user: me.user };
-    await saveAuthSession(next);
-    setSession(next);
+    try {
+      const me = await fetchAuthMe(session.token);
+      const next: AuthSession = { ...session, user: me.user };
+      await saveAuthSession(next);
+      setSession(next);
+    } catch (err) {
+      if (isInvalidSessionError(err)) {
+        await clearAuthSession();
+        setSession(null);
+        setToast({
+          open: true,
+          message: 'Session expired — please sign in again',
+        });
+        return;
+      }
+      setToast({
+        open: true,
+        message:
+          err instanceof ApiError && err.status === 0
+            ? 'No network — using offline session'
+            : 'Could not reach server — using offline session',
+      });
+    }
   }, [session]);
 
   const value = useMemo<AuthContextValue>(
@@ -135,7 +185,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [session, loading, requestOtp, verifyOtp, logout, refreshMe]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      <IonToast
+        className="eh-toast"
+        isOpen={toast.open}
+        message={toast.message}
+        duration={3200}
+        position="bottom"
+        onDidDismiss={() => setToast((t) => ({ ...t, open: false }))}
+      />
+    </AuthContext.Provider>
+  );
 };
 
 export function useAuth(): AuthContextValue {

@@ -18,7 +18,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
   'Access-Control-Allow-Headers':
-    'Authorization, Content-Type, X-Embrace-Preset, X-Embrace-Status-Length, X-Embrace-Delivery',
+    'Authorization, Content-Type, X-Embrace-Preset, X-Embrace-Status-Length, X-Embrace-Delivery, X-Embrace-X264-Preset',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -65,9 +65,15 @@ async function handleUpload(request, env) {
     return new Response('Missing request body', { status: 400 });
   }
 
+  const url = new URL(request.url);
   const preset = request.headers.get('X-Embrace-Preset') || 'auto';
   const statusLengthRaw = request.headers.get('X-Embrace-Status-Length') || '30';
   const delivery = request.headers.get('X-Embrace-Delivery') || 'status';
+  const x264Preset = (
+    url.searchParams.get('x264Preset') ||
+    request.headers.get('X-Embrace-X264-Preset') ||
+    'veryfast'
+  ).toLowerCase();
   const statusLengthSec = Number(statusLengthRaw);
   if (statusLengthSec !== 30 && statusLengthSec !== 60) {
     return new Response('X-Embrace-Status-Length must be 30 or 60', { status: 400 });
@@ -82,6 +88,12 @@ async function handleUpload(request, env) {
       status: 400,
     });
   }
+  if (!['veryfast', 'fast', 'slow'].includes(x264Preset)) {
+    return new Response(
+      'X-Embrace-X264-Preset must be veryfast, fast, or slow',
+      { status: 400 }
+    );
+  }
 
   const fileName = crypto.randomUUID() + '.mp4';
   const contentType = request.headers.get('Content-Type') || 'video/mp4';
@@ -93,6 +105,7 @@ async function handleUpload(request, env) {
         preset,
         statusLengthSec: String(statusLengthSec),
         delivery,
+        x264Preset,
       },
     });
   } catch (err) {
@@ -108,6 +121,7 @@ async function handleUpload(request, env) {
     preset,
     statusLengthSec,
     delivery,
+    x264Preset,
   });
 
   if (!notified.ok) {
@@ -137,6 +151,7 @@ async function notifyHetzner({
   preset,
   statusLengthSec,
   delivery,
+  x264Preset,
 }) {
   const base = String(env.HETZNER_BASE_URL || '').replace(/\/$/, '');
   const publicBase = String(env.WORKER_PUBLIC_URL || '').replace(/\/$/, '');
@@ -160,6 +175,7 @@ async function notifyHetzner({
         preset,
         statusLengthSec,
         delivery,
+        x264Preset,
       }),
     });
 

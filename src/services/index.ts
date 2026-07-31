@@ -9,6 +9,7 @@ export * from './adsManager';
 export * from './apiClient';
 export * from './backendEntitlements';
 export * from './backendExport';
+export * from './encodeQuality';
 export * from './deviceId';
 export * from './statusLengthPreference';
 export * from './galleryLibrary';

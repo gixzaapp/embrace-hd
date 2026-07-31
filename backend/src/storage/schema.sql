@@ -54,12 +54,18 @@ CREATE TABLE IF NOT EXISTS export_jobs (
   filename            TEXT,
   download_path       TEXT,
   preset              TEXT NOT NULL,
+  x264_preset         TEXT NOT NULL DEFAULT 'veryfast',
   status_length_sec   INT NOT NULL,
   delivery            TEXT NOT NULL,
   size_bytes          BIGINT,
   created_at          TIMESTAMPTZ NOT NULL,
   updated_at          TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE export_jobs ADD COLUMN IF NOT EXISTS x264_preset TEXT DEFAULT 'veryfast';
+UPDATE export_jobs SET x264_preset = 'veryfast' WHERE x264_preset IS NULL;
+ALTER TABLE export_jobs ALTER COLUMN x264_preset SET DEFAULT 'veryfast';
+ALTER TABLE export_jobs ALTER COLUMN x264_preset SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS export_jobs_status_idx ON export_jobs (status);
 CREATE INDEX IF NOT EXISTS export_jobs_updated_at_idx ON export_jobs (updated_at);

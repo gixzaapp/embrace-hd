@@ -6,9 +6,11 @@ import { query } from '../storage/postgres.js';
 import {
   exportWhatsAppHdSegments,
   getExportPath,
+  normalizeClientX264Preset,
   type ExportDelivery,
   type ExportPreset,
   type ExportPresetChoice,
+  type X264EncodePreset,
 } from './exportVideo.js';
 import { deliverExportVideoToWhatsApp } from './whatsappMedia.js';
 import { pullGatewayVideo } from './uploadGateway.js';
@@ -30,6 +32,8 @@ export type ExportJob = {
   deliveredVia?: 'whatsapp' | 'download';
   /** Requested choice; resolved to 720p/1080p once encode starts. */
   preset: ExportPresetChoice;
+  /** FFmpeg x264 -preset (speed / quality). */
+  x264Preset: X264EncodePreset;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
   sizeBytes?: number;
@@ -53,6 +57,7 @@ function mapJobRow(row: {
   filename: string | null;
   download_path: string | null;
   preset: string;
+  x264_preset?: string | null;
   status_length_sec: number;
   delivery: string;
   size_bytes: string | number | null;
@@ -68,6 +73,7 @@ function mapJobRow(row: {
     downloadPath,
     deliveredVia: downloadPath ? 'download' : row.filename ? 'whatsapp' : undefined,
     preset: row.preset as ExportPresetChoice,
+    x264Preset: normalizeClientX264Preset(row.x264_preset),
     statusLengthSec: row.status_length_sec as 30 | 60,
     delivery: row.delivery as ExportDelivery,
     sizeBytes:
@@ -77,39 +83,63 @@ function mapJobRow(row: {
   };
 }
 
+async function ensureX264PresetColumn(): Promise<void> {
+  await query(
+    `ALTER TABLE export_jobs ADD COLUMN IF NOT EXISTS x264_preset TEXT DEFAULT 'veryfast'`
+  );
+  await query(
+    `UPDATE export_jobs SET x264_preset = 'veryfast' WHERE x264_preset IS NULL`
+  );
+  await query(
+    `ALTER TABLE export_jobs ALTER COLUMN x264_preset SET DEFAULT 'veryfast'`
+  );
+  await query(
+    `ALTER TABLE export_jobs ALTER COLUMN x264_preset SET NOT NULL`
+  );
+}
+
 async function persist(job: ExportJob): Promise<void> {
   jobs.set(job.jobId, job);
 
   if (usingPostgres) {
-    await query(
-      `INSERT INTO export_jobs (
+    const params = [
+      job.jobId,
+      job.status,
+      job.error ?? null,
+      job.filename ?? null,
+      job.downloadPath ?? null,
+      job.preset,
+      job.x264Preset,
+      job.statusLengthSec,
+      job.delivery,
+      job.sizeBytes ?? null,
+      job.createdAt,
+      job.updatedAt,
+    ];
+    const sql = `INSERT INTO export_jobs (
          job_id, status, error, filename, download_path,
-         preset, status_length_sec, delivery, size_bytes, created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         preset, x264_preset, status_length_sec, delivery, size_bytes, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (job_id) DO UPDATE SET
          status = EXCLUDED.status,
          error = EXCLUDED.error,
          filename = EXCLUDED.filename,
          download_path = EXCLUDED.download_path,
          preset = EXCLUDED.preset,
+         x264_preset = EXCLUDED.x264_preset,
          status_length_sec = EXCLUDED.status_length_sec,
          delivery = EXCLUDED.delivery,
          size_bytes = EXCLUDED.size_bytes,
-         updated_at = EXCLUDED.updated_at`,
-      [
-        job.jobId,
-        job.status,
-        job.error ?? null,
-        job.filename ?? null,
-        job.downloadPath ?? null,
-        job.preset,
-        job.statusLengthSec,
-        job.delivery,
-        job.sizeBytes ?? null,
-        job.createdAt,
-        job.updatedAt,
-      ]
-    );
+         updated_at = EXCLUDED.updated_at`;
+    try {
+      await query(sql, params);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/x264_preset/i.test(message)) throw err;
+      console.warn('[ExportJob] x264_preset missing — applying schema fix and retrying');
+      await ensureX264PresetColumn();
+      await query(sql, params);
+    }
     return;
   }
 
@@ -155,6 +185,9 @@ export async function getExportJob(jobId: string): Promise<ExportJob | null> {
   try {
     const raw = await fs.readFile(path.join(jobsDir(), `${jobId}.json`), 'utf8');
     const job = JSON.parse(raw) as ExportJob;
+    if (!job.x264Preset) {
+      job.x264Preset = normalizeClientX264Preset(null);
+    }
     jobs.set(jobId, job);
     return job;
   } catch {
@@ -170,6 +203,7 @@ export async function enqueueExportJob(options: {
   preset: ExportPresetChoice;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
+  x264Preset?: X264EncodePreset;
   user: AuthUser;
 }): Promise<ExportJob> {
   if (!isConversationWindowOpen(options.user.lastInboundWhatsAppAt)) {
@@ -183,6 +217,7 @@ export async function enqueueExportJob(options: {
     jobId: randomUUID(),
     status: 'queued',
     preset: options.preset,
+    x264Preset: normalizeClientX264Preset(options.x264Preset),
     statusLengthSec: options.statusLengthSec,
     delivery: options.delivery,
     userId: options.user.id,
@@ -209,6 +244,7 @@ export async function enqueueRemoteExportJob(options: {
   preset: ExportPresetChoice;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
+  x264Preset?: X264EncodePreset;
   user: AuthUser;
 }): Promise<ExportJob> {
   if (!isConversationWindowOpen(options.user.lastInboundWhatsAppAt)) {
@@ -222,6 +258,7 @@ export async function enqueueRemoteExportJob(options: {
     jobId: randomUUID(),
     status: 'queued',
     preset: options.preset,
+    x264Preset: normalizeClientX264Preset(options.x264Preset),
     statusLengthSec: options.statusLengthSec,
     delivery: options.delivery,
     userId: options.user.id,
@@ -277,6 +314,7 @@ async function runExportJob(
       preset: job.preset,
       statusLengthSec: job.statusLengthSec,
       delivery: job.delivery,
+      x264Preset: normalizeClientX264Preset(job.x264Preset),
     });
 
     if (!parts.length) {

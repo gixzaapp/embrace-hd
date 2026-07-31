@@ -3,12 +3,16 @@ import { IonContent, IonPage, IonToast } from '@ionic/react';
 import { type MediaSource, type StatusLengthSec } from '../core';
 import {
   adsManager,
+  clearEmbraceHdMediaCache,
   fetchConversationWindow,
   getClientBusinessWhatsAppE164,
   isBackendEnabled,
   openBusinessWhatsAppChat,
   pickStatusMedia,
   videoGeneratorService,
+  type ConvertPhase,
+  type EncodeQualityChoice,
+  DEFAULT_ENCODE_QUALITY,
 } from '../services';
 import { getPreferredStatusLength, setPreferredStatusLength } from '../services/statusLengthPreference';
 import { probeVideoDurationSec } from '../services/videoDuration';
@@ -16,6 +20,7 @@ import {
   AppHeader,
   ConvertButton,
   ConvertProgressModal,
+  QualityDecisionModal,
   StatusLengthPicker,
   TrialProgressBar,
   UploadDropZone,
@@ -23,6 +28,7 @@ import {
   useTrial,
   VideoTimelineThumbnails,
   WhatsAppDeliveredModal,
+  type ConvertPhaseProgress,
 } from '../ui';
 import './Home.css';
 
@@ -36,6 +42,7 @@ function isAbortError(err: unknown): boolean {
 const Home: React.FC = () => {
   const {
     canExportHd,
+    canUse60sStatus,
     shouldShowAds,
     isTrialExpired,
     loading: trialLoading,
@@ -48,11 +55,22 @@ const Home: React.FC = () => {
   const [selectedMedia, setSelectedMedia] = useState<MediaSource | null>(null);
   const [videoDurationSec, setVideoDurationSec] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [qualityOpen, setQualityOpen] = useState(false);
+  const [encodeQuality, setEncodeQuality] = useState<EncodeQualityChoice>(
+    DEFAULT_ENCODE_QUALITY
+  );
   const [convertOpen, setConvertOpen] = useState(false);
-  const [convertProgress, setConvertProgress] = useState(0);
-  const [convertStatus, setConvertStatus] = useState('Uploading & converting…');
+  const [convertPhases, setConvertPhases] = useState<ConvertPhaseProgress>({
+    upload: 0,
+    convert: 0,
+    send: 0,
+  });
+  const [convertActivePhase, setConvertActivePhase] =
+    useState<ConvertPhase>('upload');
   const abortRef = useRef<AbortController | null>(null);
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
+  const contentRef = useRef<HTMLIonContentElement>(null);
+  const convertAnchorRef = useRef<HTMLDivElement>(null);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
   const [toast, setToast] = useState<{ open: boolean; message: string }>({
     open: false,
@@ -64,17 +82,46 @@ const Home: React.FC = () => {
     void adsManager.prepareConvertInterstitial().catch(() => undefined);
   }, [shouldShowAds]);
 
-  const controlsDisabled = busy || trialLoading || !canExportHd;
+  const scrollConvertIntoView = () => {
+    // Wait for timeline / layout to paint so the Convert button isn't still off-screen.
+    window.setTimeout(() => {
+      void (async () => {
+        const content = contentRef.current;
+        const anchor = convertAnchorRef.current;
+        if (!content || !anchor) return;
+        try {
+          const scrollEl = await content.getScrollElement();
+          const contentRect = scrollEl.getBoundingClientRect();
+          const anchorRect = anchor.getBoundingClientRect();
+          const nextTop =
+            scrollEl.scrollTop +
+            (anchorRect.bottom - contentRect.bottom) +
+            24;
+          await content.scrollToPoint(0, Math.max(0, nextTop), 450);
+        } catch {
+          anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      })();
+    }, 180);
+  };
+
+  // After pick (and again when duration/timeline settles), bring Convert into view.
+  useEffect(() => {
+    if (!selectedMedia?.uri) return;
+    scrollConvertIntoView();
+  }, [selectedMedia?.uri, videoDurationSec]);
+
+  // Trial ended → force 30s Status (60s requires Premium / active trial).
+  useEffect(() => {
+    if (canUse60sStatus) return;
+    if (statusLengthSec === 30) return;
+    setStatusLengthSec(30);
+    setPreferredStatusLength(30);
+  }, [canUse60sStatus, statusLengthSec]);
+
+  const controlsDisabled = busy || trialLoading;
 
   const onPickMedia = async () => {
-    if (!canExportHd) {
-      setToast({
-        open: true,
-        message: 'Trial expired — HD export is locked. Subscribe in Settings.',
-      });
-      return;
-    }
-
     setBusy(true);
     try {
       const media = await pickStatusMedia();
@@ -104,18 +151,18 @@ const Home: React.FC = () => {
 
   const onCancelConvert = () => {
     abortRef.current?.abort();
-    setConvertStatus('Cancelling…');
+  };
+
+  const onCancelQuality = () => {
+    setQualityOpen(false);
+  };
+
+  const resetConvertPhases = () => {
+    setConvertPhases({ upload: 0, convert: 0, send: 0 });
+    setConvertActivePhase('upload');
   };
 
   const onCreateStatus = async () => {
-    if (!canExportHd) {
-      setToast({
-        open: true,
-        message: 'Trial expired — HD export is locked. Subscribe in Settings.',
-      });
-      return;
-    }
-
     if (!selectedMedia?.uri) {
       setToast({
         open: true,
@@ -169,15 +216,35 @@ const Home: React.FC = () => {
       }
     }
 
+    setEncodeQuality(DEFAULT_ENCODE_QUALITY);
+    setQualityOpen(true);
+  };
+
+  const onProceedConvert = async (quality: EncodeQualityChoice) => {
+    if (!selectedMedia?.uri) {
+      setQualityOpen(false);
+      return;
+    }
+
+    const exportLengthSec: StatusLengthSec = canUse60sStatus
+      ? statusLengthSec
+      : 30;
+
+    setEncodeQuality(quality);
+    setQualityOpen(false);
+
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
-    setConvertProgress(0);
-    setConvertStatus('Uploading & converting…');
+    resetConvertPhases();
     setConvertOpen(true);
 
     interstitialPromiseRef.current = shouldShowAds
-      ? adsManager.showConvertInterstitial().catch((err) => {
+      ? (async () => {
+          // Let the convert progress UI paint briefly before the full-screen ad.
+          await new Promise((r) => setTimeout(r, 2000));
+          await adsManager.showConvertInterstitial();
+        })().catch((err) => {
           console.warn('[Ads] convert interstitial failed', err);
         })
       : Promise.resolve();
@@ -185,19 +252,35 @@ const Home: React.FC = () => {
     try {
       const exported = await videoGeneratorService.generate({
         source: selectedMedia,
-        statusLengthSec,
+        statusLengthSec: exportLengthSec,
         canExportHd,
         authToken: token ?? undefined,
+        x264Preset: quality,
         signal: controller.signal,
-        onProgress: (p) => {
-          setConvertProgress(p);
-          if (p < 0.25) setConvertStatus('Uploading video…');
-          else if (p < 0.75) setConvertStatus('Converting to HD…');
-          else setConvertStatus('Sending to WhatsApp…');
+        onProgress: (update) => {
+          setConvertActivePhase(update.phase);
+          setConvertPhases((prev) => {
+            const next = { ...prev };
+            // Keep earlier phases completed at 100%
+            if (update.phase === 'convert' || update.phase === 'send') {
+              next.upload = 1;
+            }
+            if (update.phase === 'send') {
+              next.convert = 1;
+            }
+            next[update.phase] = update.progress;
+            return next;
+          });
         },
       });
-      setConvertProgress(1);
+      setConvertPhases({ upload: 1, convert: 1, send: 1 });
+      setConvertActivePhase('send');
       setConvertOpen(false);
+
+      // Drop selection + staged cache copies — job is done on WhatsApp.
+      setSelectedMedia(null);
+      setVideoDurationSec(0);
+      void clearEmbraceHdMediaCache();
 
       try {
         await interstitialPromiseRef.current;
@@ -234,13 +317,12 @@ const Home: React.FC = () => {
     }
   };
 
-  const convertLabel = isTrialExpired
-    ? 'HD export locked'
-    : `Convert to HD · ${statusLengthSec}s`;
+  const convertLabel = `Convert to HD · ${statusLengthSec}s`;
 
   return (
     <IonPage>
       <IonContent
+        ref={contentRef}
         fullscreen
         className={`home-content${shouldShowAds ? ' home-content--with-ads' : ''}`}
       >
@@ -249,9 +331,9 @@ const Home: React.FC = () => {
         <div className="home-body">
           <TrialProgressBar />
 
-          {isTrialExpired ? (
+          {isTrialExpired && !canUse60sStatus ? (
             <p className="home-lock-note" role="status">
-              Trial ended — subscribe in Settings to unlock HD export.
+              Trial ended — convert with 30s Status. Subscribe to unlock 60s.
             </p>
           ) : null}
 
@@ -267,6 +349,14 @@ const Home: React.FC = () => {
               setStatusLengthSec(next);
               setPreferredStatusLength(next);
             }}
+            restrictedLengths={canUse60sStatus ? [] : [60]}
+            onRestrictedSelect={() => {
+              setToast({
+                open: true,
+                message:
+                  '60-second Status is locked after your trial. Convert with 30s, or subscribe in Settings to unlock 60s.',
+              });
+            }}
             disabled={controlsDisabled}
           />
 
@@ -278,18 +368,30 @@ const Home: React.FC = () => {
             />
           ) : null}
 
-          <ConvertButton
-            label={convertLabel}
-            busy={busy}
-            disabled={controlsDisabled || !selectedMedia}
-            onClick={onCreateStatus}
-          />
+          <div ref={convertAnchorRef} className="home-convert-anchor">
+            <ConvertButton
+              label={convertLabel}
+              busy={busy}
+              disabled={controlsDisabled || !selectedMedia}
+              onClick={onCreateStatus}
+            />
+          </div>
         </div>
+
+        <QualityDecisionModal
+          open={qualityOpen}
+          videoDurationSec={videoDurationSec}
+          statusLengthSec={statusLengthSec}
+          value={encodeQuality}
+          onChange={setEncodeQuality}
+          onProceed={onProceedConvert}
+          onCancel={onCancelQuality}
+        />
 
         <ConvertProgressModal
           open={convertOpen}
-          progress={convertProgress}
-          statusLabel={convertStatus}
+          phases={convertPhases}
+          activePhase={convertActivePhase}
           onCancel={onCancelConvert}
         />
 

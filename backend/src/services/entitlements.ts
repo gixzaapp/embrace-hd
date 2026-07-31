@@ -17,6 +17,8 @@ export function resolveEntitlementFlags(
     shouldApplyWatermark: false,
     // Full-time bottom banner for every non-premium user
     shouldShowAds: config.adsEnabled && !isPremiumUser,
-    canExportHd: isPremiumUser || isTrialActive,
+    // Convert stays available after trial (60s capped client-side)
+    canExportHd: true,
+    canUse60sStatus: isPremiumUser || !isTrialExpired,
   };
 }

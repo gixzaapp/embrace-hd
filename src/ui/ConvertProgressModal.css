@@ -39,29 +39,57 @@
   flex-shrink: 0;
 }
 
-.convert-progress-info {
+.convert-progress-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.convert-progress-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.convert-phase-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  flex: 1;
-  min-width: 0;
+  margin-bottom: 6px;
 }
 
-.convert-progress-status {
-  margin: 0;
-  font-size: 14px;
-  color: #cbd5e1;
+.convert-phase-label {
+  font-size: 13px;
+  color: #94a3b8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.convert-progress-pct {
-  font-size: 15px;
-  font-weight: 700;
+.convert-phase--active .convert-phase-label {
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.convert-phase--done .convert-phase-label {
   color: #5eead4;
+}
+
+.convert-phase-pct {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
   flex-shrink: 0;
+}
+
+.convert-phase--active .convert-phase-pct {
+  color: #5eead4;
+}
+
+.convert-phase--done .convert-phase-pct {
+  color: #5eead4;
 }
 
 .convert-progress-bar {
@@ -69,6 +97,15 @@
   --progress-background: #14b8a6;
   height: 6px;
   border-radius: 999px;
+}
+
+.convert-progress-bar--pending {
+  --progress-background: rgba(148, 163, 184, 0.35);
+  opacity: 0.55;
+}
+
+.convert-progress-bar--done {
+  --progress-background: #14b8a6;
 }
 
 .convert-progress-cancel {

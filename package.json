@@ -1,7 +1,7 @@
 {
   "name": "embrace-hd",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "test.unit": "vitest",
     "lint": "eslint",
     "sync": "npm run build && npx cap sync",
+    "android:aab": "npm run sync && cd android && gradlew.bat bundleRelease",
     "assets": "capacitor-assets generate --iconBackgroundColor \"#0a0c12\" --iconBackgroundColorDark \"#0a0c12\" --splashBackgroundColor \"#0a0c12\" --splashBackgroundColorDark \"#0a0c12\"",
     "android": "npx cap open android",
     "ios": "npx cap open ios",
@@ -30,6 +31,7 @@
     "@capacitor/keyboard": "8.0.5",
     "@capacitor/share": "8.0.1",
     "@capacitor/status-bar": "8.0.2",
+    "@capawesome/capacitor-app-update": "^8.0.3",
     "@capawesome/capacitor-file-picker": "^8.0.3",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",

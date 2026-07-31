@@ -15,6 +15,9 @@ export type ExportPresetChoice = ExportPreset | 'auto';
 /** How the file will be posted into WhatsApp */
 export type ExportDelivery = 'status' | 'chat-hd';
 
+/** Client-selectable x264 speed / quality tradeoff (maps to -preset). */
+export type X264EncodePreset = 'veryfast' | 'fast' | 'slow';
+
 export type ExportOptions = {
   inputPath: string;
   preset: ExportPresetChoice;
@@ -24,6 +27,8 @@ export type ExportOptions = {
    * `chat-hd` — same encode params, larger size budget for HD chat → Forward
    */
   delivery?: ExportDelivery;
+  /** Per-job override; falls back to FFMPEG_X264_PRESET / veryfast */
+  x264Preset?: X264EncodePreset;
 };
 
 /**
@@ -110,8 +115,9 @@ export function buildExportSegments(
 /**
  * WhatsApp Status encode (single pass — remux when already compliant):
  * - 720×1280 or 1080×1920 (9:16)
- * - H.264 High, CRF 18, ~2.2 Mbps maxrate, 30 fps
- * - AAC-LC 128k, +faststart
+ * - H.264 High, CRF 16, VBV capped by WhatsApp file size (not a flat 2.2 Mbps)
+ * - AAC-LC 192k / 48 kHz, +faststart
+ * - x264 preset defaults to `veryfast` (per-job or FFMPEG_X264_PRESET)
  */
 type EncodeProfile = {
   width: number;
@@ -120,57 +126,77 @@ type EncodeProfile = {
   audioBitrate: string;
   audioSampleRate: number;
   crf: number;
+  /** Soft ceiling; real bitrate is min(this, size-budget / duration). */
   maxrate: string;
   bufsize: string;
   x264Preset: 'ultrafast' | 'superfast' | 'veryfast' | 'faster' | 'fast' | 'medium' | 'slow' | 'slower';
   h264Level: string;
 };
 
-/** Prefer speed on small EB instances — quality still governed by CRF/maxrate. */
-function resolveX264Preset(): EncodeProfile['x264Preset'] {
-  const raw = (process.env.FFMPEG_X264_PRESET ?? 'veryfast').trim().toLowerCase();
-  const allowed: EncodeProfile['x264Preset'][] = [
-    'ultrafast',
-    'superfast',
-    'veryfast',
-    'faster',
-    'fast',
-    'medium',
-    'slow',
-    'slower',
-  ];
-  return (allowed.find((p) => p === raw) ?? 'veryfast') as EncodeProfile['x264Preset'];
+const X264_ALLOWED: EncodeProfile['x264Preset'][] = [
+  'ultrafast',
+  'superfast',
+  'veryfast',
+  'faster',
+  'fast',
+  'medium',
+  'slow',
+  'slower',
+];
+
+/** Client choices + env override; quality still comes from CRF + size-budget VBV. */
+export function resolveX264Preset(
+  override?: string | null
+): EncodeProfile['x264Preset'] {
+  const raw = (override ?? process.env.FFMPEG_X264_PRESET ?? 'veryfast')
+    .trim()
+    .toLowerCase();
+  return (X264_ALLOWED.find((p) => p === raw) ?? 'veryfast') as EncodeProfile['x264Preset'];
+}
+
+export function normalizeClientX264Preset(
+  value?: string | null
+): X264EncodePreset {
+  const resolved = resolveX264Preset(value);
+  if (resolved === 'fast' || resolved === 'slow') return resolved;
+  return 'veryfast';
 }
 
 function waProfile(
   width: number,
   height: number,
-  maxBytes: number
+  maxBytes: number,
+  maxrate: string
 ): EncodeProfile {
   return {
     width,
     height,
     maxBytes,
-    audioBitrate: '128k',
-    audioSampleRate: 44100,
-    crf: 18,
-    maxrate: '2200k',
-    bufsize: '4400k',
-    x264Preset: resolveX264Preset(),
+    audioBitrate: '192k',
+    audioSampleRate: 48000,
+    // Near-transparent; VBV / size budget still caps the stream for Status.
+    crf: 16,
+    maxrate,
+    bufsize: `${Number.parseInt(maxrate, 10) * 2}k`,
+    x264Preset: 'veryfast',
     h264Level: width >= 1080 ? '4.0' : '3.1',
   };
 }
 
-/** Status delivery — WhatsApp Status size ceiling (~16MB). */
+/**
+ * Status delivery — WhatsApp Status size ceiling (~16MB).
+ * maxrate is a soft ceiling; vbvForDuration uses the full size budget for short clips
+ * (≈3.5 Mbps @ 30s) instead of a flat 2.2 Mbps that wasted quality headroom.
+ */
 const STATUS_PRESETS: Record<ExportPreset, EncodeProfile> = {
-  '720p': waProfile(720, 1280, 15 * 1024 * 1024),
-  '1080p': waProfile(1080, 1920, 15 * 1024 * 1024),
+  '720p': waProfile(720, 1280, 15 * 1024 * 1024, '5000k'),
+  '1080p': waProfile(1080, 1920, 15 * 1024 * 1024, '5000k'),
 };
 
-/** Chat-HD — same bitrate/resolution; larger file budget for HD chat send. */
+/** Chat-HD — larger file budget so chat delivery keeps more detail. */
 const CHAT_HD_PRESETS: Record<ExportPreset, EncodeProfile> = {
-  '720p': waProfile(720, 1280, 48 * 1024 * 1024),
-  '1080p': waProfile(1080, 1920, 64 * 1024 * 1024),
+  '720p': waProfile(720, 1280, 48 * 1024 * 1024, '10000k'),
+  '1080p': waProfile(1080, 1920, 64 * 1024 * 1024, '14000k'),
 };
 
 type ProbeInfo = {
@@ -316,17 +342,19 @@ function buildVideoFilter(
   return filters.join(',');
 }
 
-/** Cap VBV at WhatsApp’s ~2.2 Mbps Status ceiling (and file-size budget). */
+/** Cap VBV by delivery file-size budget (and profile soft maxrate). */
 function vbvForDuration(
   profile: EncodeProfile,
   statusLengthSec: number
 ): { maxrate: string; bufsize: string } {
   const audioBits = Number.parseInt(profile.audioBitrate, 10) * 1000;
-  const usableBits = profile.maxBytes * 8 * 0.9;
+  // Use ~92% of the byte budget for A/V so we stay under WhatsApp ceilings.
+  const usableBits = profile.maxBytes * 8 * 0.92;
   const maxVideoBps = Math.floor(
     usableBits / Math.max(1, statusLengthSec) - audioBits
   );
   const presetMax = Number.parseInt(profile.maxrate, 10) * 1000;
+  // Prefer filling the size budget for short clips; never force above the budget.
   const capped = Math.max(1_500_000, Math.min(presetMax, maxVideoBps));
   const kbps = Math.round(capped / 1000);
   return {
@@ -401,6 +429,7 @@ function buildEncodeArgs(options: {
     options.profile.h264Level,
     '-pix_fmt',
     'yuv420p',
+    // CRF targets quality; maxrate/bufsize enforce WhatsApp size limits.
     '-crf',
     String(options.profile.crf),
     '-maxrate',
@@ -567,17 +596,19 @@ export async function exportWhatsAppHdSegments(
 
   const probe = await probeInput(options.inputPath);
   const preset = chooseExportPreset(options.preset, probe);
-  const profile = table[preset];
-  if (!profile) {
+  const baseProfile = table[preset];
+  if (!baseProfile) {
     throw new HttpError(400, 'preset must be 720p or 1080p');
   }
+  const x264Preset = resolveX264Preset(options.x264Preset);
+  const profile: EncodeProfile = { ...baseProfile, x264Preset };
 
   const durationSec = probe?.durationSec || options.statusLengthSec;
   const segments = buildExportSegments(durationSec, options.statusLengthSec);
   const jobId = randomUUID();
 
   console.log(
-    `[Export] ${segments.length} segment(s) ${preset} from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
+    `[Export] ${segments.length} segment(s) ${preset} x264=${x264Preset} from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
   );
 
   const results: ExportResult[] = [];

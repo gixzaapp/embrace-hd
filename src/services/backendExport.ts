@@ -2,6 +2,15 @@ import { Capacitor } from '@capacitor/core';
 import { getApiBaseUrl, isBackendEnabled, ApiError } from './apiClient';
 import { ensureLocalMediaFile } from './localMediaPath';
 import type { HdPresetChoice, HdPresetKey, StatusLengthSec } from '../core';
+import type { EncodeQualityChoice } from './encodeQuality';
+
+/** Progress is 0–1 within the current phase (each phase starts at 0). */
+export type ConvertPhase = 'upload' | 'convert' | 'send';
+
+export type ConvertProgressUpdate = {
+  phase: ConvertPhase;
+  progress: number;
+};
 
 export type BackendExportRequest = {
   sourceUri: string;
@@ -10,10 +19,12 @@ export type BackendExportRequest = {
   statusLengthSec: StatusLengthSec;
   /** chat-hd = high-bitrate master for HD→Forward; status = Status-matched */
   delivery?: 'status' | 'chat-hd';
+  /** FFmpeg x264 -preset (speed / quality) */
+  x264Preset?: EncodeQualityChoice;
   /** Required — export is authenticated and delivered to this user's WhatsApp */
   authToken: string;
   signal?: AbortSignal;
-  onProgress?: (progress: number) => void;
+  onProgress?: (update: ConvertProgressUpdate) => void;
 };
 
 export type BackendExportResult = {
@@ -29,6 +40,17 @@ function getUploadGatewayUrl(): string | null {
   const raw = import.meta.env.VITE_UPLOAD_GATEWAY_URL?.trim();
   if (!raw) return null;
   return raw.replace(/\/$/, '');
+}
+
+function report(
+  request: BackendExportRequest,
+  phase: ConvertPhase,
+  progress: number
+): void {
+  request.onProgress?.({
+    phase,
+    progress: Math.min(1, Math.max(0, progress)),
+  });
 }
 
 async function uriToBlob(uri: string): Promise<Blob> {
@@ -70,11 +92,12 @@ export async function exportViaBackend(
     throw new DOMException('Export cancelled', 'AbortError');
   }
 
-  request.onProgress?.(0.05);
+  report(request, 'upload', 0);
   const blob = await uriToBlob(request.sourceUri);
   if (signal?.aborted) {
     throw new DOMException('Export cancelled', 'AbortError');
   }
+  report(request, 'upload', 0.2);
 
   const gateway = getUploadGatewayUrl();
   const accepted = gateway
@@ -85,9 +108,14 @@ export async function exportViaBackend(
     throw new Error('Backend did not return a job id');
   }
 
-  request.onProgress?.(0.35);
+  report(request, 'upload', 1);
+  report(request, 'convert', 0);
   const job = await pollExportJob(base, accepted.jobId, request);
-  request.onProgress?.(1);
+  report(request, 'convert', 1);
+
+  report(request, 'send', 0);
+  // Delivery already finished on the server when job is done — brief send phase for UX.
+  report(request, 'send', 1);
 
   return {
     deliveredVia: 'whatsapp',
@@ -107,17 +135,21 @@ async function uploadViaGateway(
   blob: Blob,
   request: BackendExportRequest
 ): Promise<{ jobId?: string }> {
-  request.onProgress?.(0.15);
+  report(request, 'upload', 0.25);
 
-  let tick = 0.18;
+  let tick = 0.3;
   const pulse = window.setInterval(() => {
-    tick = Math.min(0.7, tick + 0.03);
-    request.onProgress?.(tick);
+    tick = Math.min(0.95, tick + 0.05);
+    report(request, 'upload', tick);
   }, 700);
 
   let res: Response;
   try {
-    res = await fetch(`${gatewayBase}/upload`, {
+    const x264 = request.x264Preset ?? 'veryfast';
+    // Pass quality via query string — avoids CORS preflight rejection when the
+    // worker Allow-Headers list has not been redeployed with a new custom header.
+    const uploadUrl = `${gatewayBase}/upload?x264Preset=${encodeURIComponent(x264)}`;
+    res = await fetch(uploadUrl, {
       method: 'PUT',
       body: blob,
       signal: request.signal,
@@ -129,6 +161,15 @@ async function uploadViaGateway(
         'X-Embrace-Delivery': request.delivery ?? 'status',
       },
     });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    const detail = err instanceof Error ? err.message : 'Upload failed';
+    throw new ApiError(
+      /failed to fetch|networkerror|load failed/i.test(detail)
+        ? 'Upload failed — check network, or redeploy the upload gateway'
+        : detail,
+      0
+    );
   } finally {
     window.clearInterval(pulse);
   }
@@ -159,17 +200,18 @@ async function uploadDirect(
   blob: Blob,
   request: BackendExportRequest
 ): Promise<{ jobId?: string }> {
-  request.onProgress?.(0.2);
+  report(request, 'upload', 0.25);
   const form = new FormData();
   form.append('video', blob, 'input.mp4');
   form.append('preset', request.preset);
   form.append('statusLengthSec', String(request.statusLengthSec));
   form.append('delivery', request.delivery ?? 'status');
+  form.append('x264Preset', request.x264Preset ?? 'veryfast');
 
-  let tick = 0.22;
+  let tick = 0.3;
   const pulse = window.setInterval(() => {
-    tick = Math.min(0.72, tick + 0.03);
-    request.onProgress?.(tick);
+    tick = Math.min(0.95, tick + 0.05);
+    report(request, 'upload', tick);
   }, 700);
 
   let res: Response;
@@ -182,6 +224,15 @@ async function uploadDirect(
         Authorization: `Bearer ${request.authToken}`,
       },
     });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    const detail = err instanceof Error ? err.message : 'Export failed';
+    throw new ApiError(
+      /failed to fetch|networkerror|load failed/i.test(detail)
+        ? 'Could not reach the server — check your connection'
+        : detail,
+      0
+    );
   } finally {
     window.clearInterval(pulse);
   }
@@ -218,7 +269,7 @@ async function pollExportJob(
   const signal = request.signal;
   const started = Date.now();
   const maxMs = 10 * 60 * 1000;
-  let tick = 0.38;
+  let tick = 0.05;
 
   while (Date.now() - started < maxMs) {
     if (signal?.aborted) {
@@ -232,6 +283,9 @@ async function pollExportJob(
         Authorization: `Bearer ${request.authToken}`,
       },
       signal,
+    }).catch((err) => {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      throw new ApiError('Lost connection while converting — check your network', 0);
     });
 
     if (!res.ok) {
@@ -239,8 +293,8 @@ async function pollExportJob(
     }
 
     const job = (await res.json()) as ExportJobPollResponse;
-    tick = Math.min(0.85, tick + 0.02);
-    request.onProgress?.(tick);
+    tick = Math.min(0.95, tick + 0.04);
+    report(request, 'convert', tick);
 
     if (job.status === 'done') {
       return job;

@@ -47,6 +47,8 @@ export type EntitlementFlags = {
   shouldApplyWatermark: boolean;
   shouldShowAds: boolean;
   canExportHd: boolean;
+  /** 60s Status — premium or active trial only */
+  canUse60sStatus: boolean;
 };
 
 export type EntitlementsResponse = {

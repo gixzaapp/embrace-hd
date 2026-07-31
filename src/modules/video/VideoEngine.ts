@@ -10,7 +10,10 @@ import {
   type VideoProject,
 } from '../../core';
 import { isBackendEnabled } from '../../services/apiClient';
-import { exportViaBackend } from '../../services/backendExport';
+import {
+  exportViaBackend,
+  type ConvertProgressUpdate,
+} from '../../services/backendExport';
 import { compressionEngine } from './CompressionEngine';
 import type { EncodeOptions, VideoComposition } from './types';
 
@@ -54,7 +57,7 @@ export class VideoEngine {
   async render(
     composition: VideoComposition,
     options?: Partial<EncodeOptions>,
-    onProgress?: (progress: number) => void
+    onProgress?: (update: ConvertProgressUpdate) => void
   ): Promise<RenderJob> {
     const jobId = createId('job');
     const preset = options?.preset ?? composition.project.preset;
@@ -106,10 +109,9 @@ export class VideoEngine {
     }
 
     try {
-      onProgress?.(0);
+      onProgress?.({ phase: 'upload', progress: 0 });
 
       if (isBackendEnabled()) {
-        onProgress?.(0.15);
         const authToken = options?.authToken;
         if (!authToken) {
           return {
@@ -126,34 +128,38 @@ export class VideoEngine {
           preset: encode.preset,
           statusLengthSec: maxDurationSec,
           delivery: 'status',
+          x264Preset: encode.x264Preset,
           authToken,
-          onProgress: (p) => onProgress?.(p),
+          onProgress,
           signal: options?.signal,
         });
-        onProgress?.(1);
         return {
           id: jobId,
           projectId: composition.project.id,
           status: 'ready',
           progress: 1,
           deliveredVia: 'whatsapp',
-          // No local file — delivered on WhatsApp
           outputUri: undefined,
         };
       }
 
+      onProgress?.({ phase: 'convert', progress: 0 });
       const compressed = await compressionEngine.compress({
         sourcePath: source.uri,
         preset: resolveLocalPreset(encode.preset),
         maxDurationSec,
         onProgress: (info) => {
           if (typeof info.percent === 'number') {
-            onProgress?.(Math.min(0.75, Math.max(0, (info.percent / 100) * 0.75)));
+            onProgress?.({
+              phase: 'convert',
+              progress: Math.min(1, Math.max(0, info.percent / 100)),
+            });
           }
         },
       });
 
-      onProgress?.(1);
+      onProgress?.({ phase: 'convert', progress: 1 });
+      onProgress?.({ phase: 'send', progress: 1 });
       return {
         id: jobId,
         projectId: composition.project.id,
