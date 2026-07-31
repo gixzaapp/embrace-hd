@@ -65,11 +65,14 @@ async function handleUpload(request, env) {
     return new Response('Missing request body', { status: 400 });
   }
 
+  const url = new URL(request.url);
   const preset = request.headers.get('X-Embrace-Preset') || 'auto';
   const statusLengthRaw = request.headers.get('X-Embrace-Status-Length') || '30';
   const delivery = request.headers.get('X-Embrace-Delivery') || 'status';
   const x264Preset = (
-    request.headers.get('X-Embrace-X264-Preset') || 'veryfast'
+    url.searchParams.get('x264Preset') ||
+    request.headers.get('X-Embrace-X264-Preset') ||
+    'veryfast'
   ).toLowerCase();
   const statusLengthSec = Number(statusLengthRaw);
   if (statusLengthSec !== 30 && statusLengthSec !== 60) {

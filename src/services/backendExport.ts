@@ -145,7 +145,11 @@ async function uploadViaGateway(
 
   let res: Response;
   try {
-    res = await fetch(`${gatewayBase}/upload`, {
+    const x264 = request.x264Preset ?? 'veryfast';
+    // Pass quality via query string — avoids CORS preflight rejection when the
+    // worker Allow-Headers list has not been redeployed with a new custom header.
+    const uploadUrl = `${gatewayBase}/upload?x264Preset=${encodeURIComponent(x264)}`;
+    res = await fetch(uploadUrl, {
       method: 'PUT',
       body: blob,
       signal: request.signal,
@@ -155,9 +159,17 @@ async function uploadViaGateway(
         'X-Embrace-Preset': request.preset,
         'X-Embrace-Status-Length': String(request.statusLengthSec),
         'X-Embrace-Delivery': request.delivery ?? 'status',
-        'X-Embrace-X264-Preset': request.x264Preset ?? 'veryfast',
       },
     });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    const detail = err instanceof Error ? err.message : 'Upload failed';
+    throw new ApiError(
+      /failed to fetch|networkerror|load failed/i.test(detail)
+        ? 'Upload failed — check network, or redeploy the upload gateway'
+        : detail,
+      0
+    );
   } finally {
     window.clearInterval(pulse);
   }
@@ -212,6 +224,15 @@ async function uploadDirect(
         Authorization: `Bearer ${request.authToken}`,
       },
     });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    const detail = err instanceof Error ? err.message : 'Export failed';
+    throw new ApiError(
+      /failed to fetch|networkerror|load failed/i.test(detail)
+        ? 'Could not reach the server — check your connection'
+        : detail,
+      0
+    );
   } finally {
     window.clearInterval(pulse);
   }
@@ -262,6 +283,9 @@ async function pollExportJob(
         Authorization: `Bearer ${request.authToken}`,
       },
       signal,
+    }).catch((err) => {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      throw new ApiError('Lost connection while converting — check your network', 0);
     });
 
     if (!res.ok) {
