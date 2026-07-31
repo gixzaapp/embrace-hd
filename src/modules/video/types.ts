@@ -21,6 +21,8 @@ export type EncodeOptions = {
   preferRemux: boolean;
   maxEncodePasses: number;
   audioBitrateKbps: number;
+  /** FFmpeg x264 -preset when using backend encode */
+  x264Preset?: 'veryfast' | 'fast' | 'slow';
   /** Optional cancel for backend / long encodes */
   signal?: AbortSignal;
   /** Session token — required when backend delivers via WhatsApp */

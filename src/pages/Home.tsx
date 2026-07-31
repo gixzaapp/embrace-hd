@@ -3,12 +3,16 @@ import { IonContent, IonPage, IonToast } from '@ionic/react';
 import { type MediaSource, type StatusLengthSec } from '../core';
 import {
   adsManager,
+  clearEmbraceHdMediaCache,
   fetchConversationWindow,
   getClientBusinessWhatsAppE164,
   isBackendEnabled,
   openBusinessWhatsAppChat,
   pickStatusMedia,
   videoGeneratorService,
+  type ConvertPhase,
+  type EncodeQualityChoice,
+  DEFAULT_ENCODE_QUALITY,
 } from '../services';
 import { getPreferredStatusLength, setPreferredStatusLength } from '../services/statusLengthPreference';
 import { probeVideoDurationSec } from '../services/videoDuration';
@@ -16,6 +20,7 @@ import {
   AppHeader,
   ConvertButton,
   ConvertProgressModal,
+  QualityDecisionModal,
   StatusLengthPicker,
   TrialProgressBar,
   UploadDropZone,
@@ -23,6 +28,7 @@ import {
   useTrial,
   VideoTimelineThumbnails,
   WhatsAppDeliveredModal,
+  type ConvertPhaseProgress,
 } from '../ui';
 import './Home.css';
 
@@ -48,9 +54,18 @@ const Home: React.FC = () => {
   const [selectedMedia, setSelectedMedia] = useState<MediaSource | null>(null);
   const [videoDurationSec, setVideoDurationSec] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [qualityOpen, setQualityOpen] = useState(false);
+  const [encodeQuality, setEncodeQuality] = useState<EncodeQualityChoice>(
+    DEFAULT_ENCODE_QUALITY
+  );
   const [convertOpen, setConvertOpen] = useState(false);
-  const [convertProgress, setConvertProgress] = useState(0);
-  const [convertStatus, setConvertStatus] = useState('Uploading & converting…');
+  const [convertPhases, setConvertPhases] = useState<ConvertPhaseProgress>({
+    upload: 0,
+    convert: 0,
+    send: 0,
+  });
+  const [convertActivePhase, setConvertActivePhase] =
+    useState<ConvertPhase>('upload');
   const abortRef = useRef<AbortController | null>(null);
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
   const [deliveredOpen, setDeliveredOpen] = useState(false);
@@ -104,7 +119,15 @@ const Home: React.FC = () => {
 
   const onCancelConvert = () => {
     abortRef.current?.abort();
-    setConvertStatus('Cancelling…');
+  };
+
+  const onCancelQuality = () => {
+    setQualityOpen(false);
+  };
+
+  const resetConvertPhases = () => {
+    setConvertPhases({ upload: 0, convert: 0, send: 0 });
+    setConvertActivePhase('upload');
   };
 
   const onCreateStatus = async () => {
@@ -169,11 +192,23 @@ const Home: React.FC = () => {
       }
     }
 
+    setEncodeQuality(DEFAULT_ENCODE_QUALITY);
+    setQualityOpen(true);
+  };
+
+  const onProceedConvert = async (quality: EncodeQualityChoice) => {
+    if (!selectedMedia?.uri) {
+      setQualityOpen(false);
+      return;
+    }
+
+    setEncodeQuality(quality);
+    setQualityOpen(false);
+
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
-    setConvertProgress(0);
-    setConvertStatus('Uploading & converting…');
+    resetConvertPhases();
     setConvertOpen(true);
 
     interstitialPromiseRef.current = shouldShowAds
@@ -188,16 +223,32 @@ const Home: React.FC = () => {
         statusLengthSec,
         canExportHd,
         authToken: token ?? undefined,
+        x264Preset: quality,
         signal: controller.signal,
-        onProgress: (p) => {
-          setConvertProgress(p);
-          if (p < 0.25) setConvertStatus('Uploading video…');
-          else if (p < 0.75) setConvertStatus('Converting to HD…');
-          else setConvertStatus('Sending to WhatsApp…');
+        onProgress: (update) => {
+          setConvertActivePhase(update.phase);
+          setConvertPhases((prev) => {
+            const next = { ...prev };
+            // Keep earlier phases completed at 100%
+            if (update.phase === 'convert' || update.phase === 'send') {
+              next.upload = 1;
+            }
+            if (update.phase === 'send') {
+              next.convert = 1;
+            }
+            next[update.phase] = update.progress;
+            return next;
+          });
         },
       });
-      setConvertProgress(1);
+      setConvertPhases({ upload: 1, convert: 1, send: 1 });
+      setConvertActivePhase('send');
       setConvertOpen(false);
+
+      // Drop selection + staged cache copies — job is done on WhatsApp.
+      setSelectedMedia(null);
+      setVideoDurationSec(0);
+      void clearEmbraceHdMediaCache();
 
       try {
         await interstitialPromiseRef.current;
@@ -286,10 +337,20 @@ const Home: React.FC = () => {
           />
         </div>
 
+        <QualityDecisionModal
+          open={qualityOpen}
+          videoDurationSec={videoDurationSec}
+          statusLengthSec={statusLengthSec}
+          value={encodeQuality}
+          onChange={setEncodeQuality}
+          onProceed={onProceedConvert}
+          onCancel={onCancelQuality}
+        />
+
         <ConvertProgressModal
           open={convertOpen}
-          progress={convertProgress}
-          statusLabel={convertStatus}
+          phases={convertPhases}
+          activePhase={convertActivePhase}
           onCancel={onCancelConvert}
         />
 

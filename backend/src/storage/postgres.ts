@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS export_jobs (
   filename            TEXT,
   download_path       TEXT,
   preset              TEXT NOT NULL,
+  x264_preset         TEXT NOT NULL DEFAULT 'veryfast',
   status_length_sec   INT NOT NULL,
   delivery            TEXT NOT NULL,
   size_bytes          BIGINT,
@@ -130,6 +131,9 @@ export async function migratePostgres(): Promise<void> {
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_lookup TEXT`);
   await query(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_inbound_whatsapp_at TIMESTAMPTZ`
+  );
+  await query(
+    `ALTER TABLE export_jobs ADD COLUMN IF NOT EXISTS x264_preset TEXT NOT NULL DEFAULT 'veryfast'`
   );
   await query(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_phone_lookup_uidx ON users (phone_lookup)`

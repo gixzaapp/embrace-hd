@@ -1,6 +1,6 @@
 import { IonApp, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { AppTabs, AppUpdateSnackbar, AuthProvider, TrialProvider } from './ui';
+import { AppTabs, AppUpdateSnackbar, AuthProvider, BackButtonExit, TrialProvider } from './ui';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -24,7 +24,11 @@ import '@ionic/react/css/palettes/dark.always.css';
 import './theme/variables.css';
 import './theme/design-system.css';
 
-setupIonicReact();
+setupIonicReact({
+  // We own Android back via CapApp in BackButtonExit — prevent Ionic
+  // from calling history.back() through tab pages (Settings → Gallery).
+  hardwareBackButton: false,
+});
 
 const App: React.FC = () => (
   <IonApp>
@@ -32,6 +36,7 @@ const App: React.FC = () => (
       <TrialProvider>
         <IonReactRouter>
           <AppTabs />
+          <BackButtonExit />
         </IonReactRouter>
         <AppUpdateSnackbar />
       </TrialProvider>

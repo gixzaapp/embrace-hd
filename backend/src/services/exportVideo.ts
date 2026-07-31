@@ -15,6 +15,9 @@ export type ExportPresetChoice = ExportPreset | 'auto';
 /** How the file will be posted into WhatsApp */
 export type ExportDelivery = 'status' | 'chat-hd';
 
+/** Client-selectable x264 speed / quality tradeoff (maps to -preset). */
+export type X264EncodePreset = 'veryfast' | 'fast' | 'slow';
+
 export type ExportOptions = {
   inputPath: string;
   preset: ExportPresetChoice;
@@ -24,6 +27,8 @@ export type ExportOptions = {
    * `chat-hd` — same encode params, larger size budget for HD chat → Forward
    */
   delivery?: ExportDelivery;
+  /** Per-job override; falls back to FFMPEG_X264_PRESET / veryfast */
+  x264Preset?: X264EncodePreset;
 };
 
 /**
@@ -112,7 +117,7 @@ export function buildExportSegments(
  * - 720×1280 or 1080×1920 (9:16)
  * - H.264 High, CRF 16, VBV capped by WhatsApp file size (not a flat 2.2 Mbps)
  * - AAC-LC 192k / 48 kHz, +faststart
- * - x264 preset defaults to `veryfast` (override with FFMPEG_X264_PRESET)
+ * - x264 preset defaults to `veryfast` (per-job or FFMPEG_X264_PRESET)
  */
 type EncodeProfile = {
   width: number;
@@ -128,20 +133,33 @@ type EncodeProfile = {
   h264Level: string;
 };
 
-/** Speed-first default for Hetzner; quality still comes from CRF + size-budget VBV. */
-function resolveX264Preset(): EncodeProfile['x264Preset'] {
-  const raw = (process.env.FFMPEG_X264_PRESET ?? 'veryfast').trim().toLowerCase();
-  const allowed: EncodeProfile['x264Preset'][] = [
-    'ultrafast',
-    'superfast',
-    'veryfast',
-    'faster',
-    'fast',
-    'medium',
-    'slow',
-    'slower',
-  ];
-  return (allowed.find((p) => p === raw) ?? 'veryfast') as EncodeProfile['x264Preset'];
+const X264_ALLOWED: EncodeProfile['x264Preset'][] = [
+  'ultrafast',
+  'superfast',
+  'veryfast',
+  'faster',
+  'fast',
+  'medium',
+  'slow',
+  'slower',
+];
+
+/** Client choices + env override; quality still comes from CRF + size-budget VBV. */
+export function resolveX264Preset(
+  override?: string | null
+): EncodeProfile['x264Preset'] {
+  const raw = (override ?? process.env.FFMPEG_X264_PRESET ?? 'veryfast')
+    .trim()
+    .toLowerCase();
+  return (X264_ALLOWED.find((p) => p === raw) ?? 'veryfast') as EncodeProfile['x264Preset'];
+}
+
+export function normalizeClientX264Preset(
+  value?: string | null
+): X264EncodePreset {
+  const resolved = resolveX264Preset(value);
+  if (resolved === 'fast' || resolved === 'slow') return resolved;
+  return 'veryfast';
 }
 
 function waProfile(
@@ -160,7 +178,7 @@ function waProfile(
     crf: 16,
     maxrate,
     bufsize: `${Number.parseInt(maxrate, 10) * 2}k`,
-    x264Preset: resolveX264Preset(),
+    x264Preset: 'veryfast',
     h264Level: width >= 1080 ? '4.0' : '3.1',
   };
 }
@@ -578,17 +596,19 @@ export async function exportWhatsAppHdSegments(
 
   const probe = await probeInput(options.inputPath);
   const preset = chooseExportPreset(options.preset, probe);
-  const profile = table[preset];
-  if (!profile) {
+  const baseProfile = table[preset];
+  if (!baseProfile) {
     throw new HttpError(400, 'preset must be 720p or 1080p');
   }
+  const x264Preset = resolveX264Preset(options.x264Preset);
+  const profile: EncodeProfile = { ...baseProfile, x264Preset };
 
   const durationSec = probe?.durationSec || options.statusLengthSec;
   const segments = buildExportSegments(durationSec, options.statusLengthSec);
   const jobId = randomUUID();
 
   console.log(
-    `[Export] ${segments.length} segment(s) ${preset} from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
+    `[Export] ${segments.length} segment(s) ${preset} x264=${x264Preset} from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
   );
 
   const results: ExportResult[] = [];

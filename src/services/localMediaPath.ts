@@ -133,3 +133,37 @@ export async function ensureLocalMediaFile(
 
   return writeBytesToCache(bytes, filename);
 }
+
+/** Delete a single cached Embrace HD media file if it lives under Cache/EmbraceHD. */
+export async function deleteLocalMediaIfCached(uri: string): Promise<void> {
+  const match = uri.match(/EmbraceHD\/[^/?#]+/);
+  if (!match) return;
+  try {
+    await Filesystem.deleteFile({
+      path: match[0],
+      directory: Directory.Cache,
+    });
+  } catch {
+    // Already gone or not writable — ignore
+  }
+}
+
+/** Remove all staged media copies from app cache after a convert finishes. */
+export async function clearEmbraceHdMediaCache(): Promise<void> {
+  try {
+    const listing = await Filesystem.readdir({
+      path: 'EmbraceHD',
+      directory: Directory.Cache,
+    });
+    await Promise.all(
+      (listing.files ?? []).map((entry) =>
+        Filesystem.deleteFile({
+          path: `EmbraceHD/${entry.name}`,
+          directory: Directory.Cache,
+        }).catch(() => undefined)
+      )
+    );
+  } catch {
+    // Cache folder may not exist yet
+  }
+}

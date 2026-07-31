@@ -15,6 +15,7 @@ import {
   getUploadsDir,
   type ExportDelivery,
   type ExportPresetChoice,
+  type X264EncodePreset,
 } from '../services/exportVideo.js';
 import { isUploadGatewayConfigured } from '../services/uploadGateway.js';
 
@@ -52,6 +53,7 @@ const fieldsSchema = z.object({
   preset: z.enum(['auto', '720p', '1080p']).default('auto'),
   statusLengthSec: z.coerce.number().refine((n) => n === 30 || n === 60),
   delivery: z.enum(['status', 'chat-hd']).default('status'),
+  x264Preset: z.enum(['veryfast', 'fast', 'slow']).default('veryfast'),
 });
 
 const remoteSchema = z.object({
@@ -65,6 +67,7 @@ const remoteSchema = z.object({
   preset: z.enum(['auto', '720p', '1080p']).default('auto'),
   statusLengthSec: z.coerce.number().refine((n) => n === 30 || n === 60),
   delivery: z.enum(['status', 'chat-hd']).default('status'),
+  x264Preset: z.enum(['veryfast', 'fast', 'slow']).default('veryfast'),
 });
 
 function requireWorkerSecret(req: AuthedRequest): void {
@@ -106,13 +109,14 @@ exportRouter.post('/', requireAuth, (req, res, next) => {
         throw new HttpError(400, 'Invalid export options', parsed.error.flatten());
       }
 
-      const { preset, statusLengthSec, delivery } = parsed.data;
+      const { preset, statusLengthSec, delivery, x264Preset } = parsed.data;
       try {
         const job = await enqueueExportJob({
           inputPath: file.path,
           preset: preset as ExportPresetChoice,
           statusLengthSec: statusLengthSec as 30 | 60,
           delivery: delivery as ExportDelivery,
+          x264Preset: x264Preset as X264EncodePreset,
           user,
         });
 
@@ -154,7 +158,7 @@ exportRouter.post('/remote', requireAuth, async (req, res, next) => {
       throw new HttpError(400, 'Invalid remote export body', parsed.error.flatten());
     }
 
-    const { fileName, downloadUrl, preset, statusLengthSec, delivery } =
+    const { fileName, downloadUrl, preset, statusLengthSec, delivery, x264Preset } =
       parsed.data;
 
     try {
@@ -164,6 +168,7 @@ exportRouter.post('/remote', requireAuth, async (req, res, next) => {
         preset: preset as ExportPresetChoice,
         statusLengthSec: statusLengthSec as 30 | 60,
         delivery: delivery as ExportDelivery,
+        x264Preset: x264Preset as X264EncodePreset,
         user,
       });
 

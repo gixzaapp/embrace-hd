@@ -17,7 +17,7 @@ const DEFAULT_CONFIG: AppConfig = {
     lifetimePlan: true,
     imageToVideo: false,
     nativeWatermark: false,
-    showLogout: false,
+    showLogout: true,
     showUnlockPremium: false,
   },
   minAppVersion: '0.1.0',

@@ -23,7 +23,6 @@ const Settings: React.FC = () => {
   const {
     shouldShowAds,
     isSubscribed,
-    showLogout,
     showUnlockPremium,
   } = useTrial();
   const { user, logout } = useAuth();
@@ -70,30 +69,16 @@ const Settings: React.FC = () => {
                 <p className="settings-account-name">{user.name}</p>
               ) : null}
               <p className="settings-account-phone">{user?.phoneE164 ?? '—'}</p>
-              {showLogout ? (
-                <IonButton
-                  expand="block"
-                  fill="outline"
-                  color="medium"
-                  className="settings-logout-btn"
-                  disabled={loggingOut}
-                  onClick={() => void handleLogout()}
-                >
-                  {loggingOut ? 'Signing out…' : 'Log out'}
-                </IonButton>
-              ) : null}
               <IonButton
                 expand="block"
-                fill="clear"
-                color="danger"
-                className="settings-delete-btn"
-                onClick={openDeleteAccountPage}
+                fill="outline"
+                color="medium"
+                className="settings-logout-btn"
+                disabled={loggingOut}
+                onClick={() => void handleLogout()}
               >
-                Delete account
+                {loggingOut ? 'Signing out…' : 'Sign out'}
               </IonButton>
-              <p className="settings-hint settings-hint--tight">
-                Opens our website so you can request permanent account and data deletion.
-              </p>
             </div>
           </section>
 
@@ -126,6 +111,22 @@ const Settings: React.FC = () => {
               <SubscriptionPlans forceShow />
             </section>
           ) : null}
+
+          <section className="settings-section">
+            <h3 className="settings-section-title font-label-sm">Danger zone</h3>
+            <IonButton
+              expand="block"
+              fill="clear"
+              color="danger"
+              className="settings-delete-btn"
+              onClick={openDeleteAccountPage}
+            >
+              Delete account
+            </IonButton>
+            <p className="settings-hint settings-hint--tight">
+              Opens our website so you can request permanent account and data deletion.
+            </p>
+          </section>
         </div>
 
         <IonToast

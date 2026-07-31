@@ -10,6 +10,8 @@ import {
 import { whatsAppStatusExporter } from '../modules/status';
 import { videoEngine } from '../modules/video';
 import { saveExportToGallery, type GalleryItem } from './galleryLibrary';
+import type { ConvertProgressUpdate } from './backendExport';
+import type { EncodeQualityChoice } from './encodeQuality';
 import {
   shareMedia,
   shareToWhatsAppChatForHdStatus,
@@ -25,7 +27,9 @@ export type GenerateStatusOptions = {
   canExportHd?: boolean;
   /** Session token for authenticated backend WhatsApp delivery */
   authToken?: string;
-  onProgress?: (progress: number) => void;
+  /** FFmpeg x264 -preset (speed / quality) */
+  x264Preset?: EncodeQualityChoice;
+  onProgress?: (update: ConvertProgressUpdate) => void;
   signal?: AbortSignal;
 };
 
@@ -40,9 +44,10 @@ export class VideoGeneratorService {
   async renderWhatsAppStatus(
     project: VideoProject,
     overrides?: Partial<StatusExportOptions>,
-    onProgress?: (progress: number) => void,
+    onProgress?: (update: ConvertProgressUpdate) => void,
     signal?: AbortSignal,
-    authToken?: string
+    authToken?: string,
+    x264Preset?: EncodeQualityChoice
   ) {
     const options: StatusExportOptions = {
       ...appConfig.defaults.statusExport,
@@ -53,7 +58,8 @@ export class VideoGeneratorService {
       options,
       onProgress,
       signal,
-      authToken
+      authToken,
+      x264Preset
     );
   }
 
@@ -143,7 +149,8 @@ export class VideoGeneratorService {
       },
       options.onProgress,
       options.signal,
-      options.authToken
+      options.authToken,
+      options.x264Preset
     );
 
     if (options.signal?.aborted) {
