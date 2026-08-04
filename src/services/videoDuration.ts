@@ -39,6 +39,31 @@ export async function probeVideoDurationSec(uri: string): Promise<number> {
   });
 }
 
+/** Probe duration of an audio file (or any media with an audio track). */
+export async function probeAudioDurationSec(uri: string): Promise<number> {
+  const src = mediaDisplaySrc(uri);
+  if (!src) return 0;
+
+  return new Promise((resolve) => {
+    const audio = document.createElement('audio');
+    audio.preload = 'metadata';
+
+    const cleanup = () => {
+      audio.removeAttribute('src');
+      audio.load();
+    };
+
+    const finish = (sec: number) => {
+      cleanup();
+      resolve(Number.isFinite(sec) && sec > 0 ? sec : 0);
+    };
+
+    audio.onloadedmetadata = () => finish(audio.duration);
+    audio.onerror = () => finish(0);
+    audio.src = src;
+  });
+}
+
 export type TimelineSegment = {
   index: number;
   /** Seek time for thumbnail frame */

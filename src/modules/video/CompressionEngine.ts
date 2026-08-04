@@ -1,10 +1,13 @@
 import { Capacitor } from '@capacitor/core';
-import { Directory, Filesystem } from '@capacitor/filesystem';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { VideoEditor } from '@whiteguru/capacitor-plugin-video-editor';
 import { HD_PRESETS, QUALITY_REQUIREMENTS, createId, type HdPresetKey } from '../../core';
 import { ensureLocalMediaFile } from '../../services/localMediaPath';
+import {
+  getFfmpeg,
+  persistVideoBytes,
+  readFfmpegFileBytes,
+  resolveVideoBytes,
+} from './ffmpegLoader';
 
 export type CompressorQuality = 'low' | 'medium' | 'high' | 'custom';
 
@@ -48,94 +51,12 @@ export function optionsForPreset(preset: HdPresetKey): {
   };
 }
 
-async function resolveVideoBytes(sourcePath: string): Promise<Uint8Array> {
-  const src = Capacitor.isNativePlatform()
-    ? Capacitor.convertFileSrc(sourcePath)
-    : sourcePath;
-
-  try {
-    return await fetchFile(src);
-  } catch {
-    const path = sourcePath.replace(/^file:\/\//, '');
-    const result = await Filesystem.readFile({ path });
-    const data = result.data;
-    if (typeof data === 'string') {
-      const binary = atob(data);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-      return bytes;
-    }
-    if (data instanceof Blob) {
-      return new Uint8Array(await data.arrayBuffer());
-    }
-    return new Uint8Array(data as unknown as ArrayBuffer);
-  }
-}
-
-async function persistOutput(bytes: Uint8Array): Promise<string> {
-  const filename = `embraceHD_cmp_${Date.now()}.mp4`;
-
-  if (!Capacitor.isNativePlatform()) {
-    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'video/mp4' });
-    return URL.createObjectURL(blob);
-  }
-
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-
-  await Filesystem.mkdir({
-    path: 'EmbraceHD',
-    directory: Directory.Cache,
-    recursive: true,
-  }).catch(() => undefined);
-
-  const written = await Filesystem.writeFile({
-    path: `EmbraceHD/${filename}`,
-    data: btoa(binary),
-    directory: Directory.Cache,
-  });
-
-  return written.uri;
-}
-
 /**
  * Video compression:
  * - Native: @whiteguru/capacitor-plugin-video-editor (LiTr / MediaCodec)
  * - Web: FFmpeg.wasm fallback
  */
 export class CompressionEngine {
-  private ffmpeg: FFmpeg | null = null;
-  private ffmpegLoading: Promise<void> | null = null;
-
-  private async initFfmpeg(): Promise<FFmpeg> {
-    if (this.ffmpeg?.loaded) return this.ffmpeg;
-    if (this.ffmpegLoading) {
-      await this.ffmpegLoading;
-      return this.ffmpeg!;
-    }
-
-    this.ffmpegLoading = (async () => {
-      const ffmpeg = new FFmpeg();
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
-      this.ffmpeg = ffmpeg;
-    })();
-
-    try {
-      await this.ffmpegLoading;
-    } finally {
-      this.ffmpegLoading = null;
-    }
-
-    return this.ffmpeg!;
-  }
-
   async compress(request: CompressionRequest): Promise<CompressionResult> {
     const dims = HD_PRESETS[request.preset];
     request.onProgress?.({ status: 'started', percent: 0 });
@@ -227,7 +148,7 @@ export class CompressionEngine {
     request: CompressionRequest,
     dims: { width: number; height: number }
   ): Promise<CompressionResult> {
-    const ffmpeg = await this.initFfmpeg();
+    const ffmpeg = await getFfmpeg();
     const inputName = `in_${createId('cmp')}.mp4`;
     const outputName = `out_${createId('cmp')}.mp4`;
 
@@ -287,12 +208,9 @@ export class CompressionEngine {
       }
 
       const data = await ffmpeg.readFile(outputName);
-      const bytes =
-        typeof data === 'string'
-          ? new TextEncoder().encode(data)
-          : new Uint8Array(data as Uint8Array);
+      const bytes = readFfmpegFileBytes(data);
 
-      const destPath = request.destPath ?? (await persistOutput(bytes));
+      const destPath = request.destPath ?? (await persistVideoBytes(bytes, 'embraceHD_cmp'));
       request.onProgress?.({ status: 'progress', percent: 100 });
 
       return {

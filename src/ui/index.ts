@@ -14,6 +14,8 @@ export { StatusShareSheet } from './StatusShareSheet';
 export { WhatsAppDeliveredModal } from './WhatsAppDeliveredModal';
 export { VideoTimelineThumbnails } from './VideoTimelineThumbnails';
 export { GalleryVideoThumb } from './GalleryVideoThumb';
+export { EditWorkspace } from './EditWorkspace';
+export type { EditWorkspaceHandle } from './EditWorkspace';
 export { ConvertProgressModal } from './ConvertProgressModal';
 export type { ConvertPhaseProgress } from './ConvertProgressModal';
 export { QualityDecisionModal } from './QualityDecisionModal';

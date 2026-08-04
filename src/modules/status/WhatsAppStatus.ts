@@ -11,6 +11,7 @@ import {
 import { videoEngine } from '../video';
 import type { ConvertProgressUpdate } from '../../services/backendExport';
 import type { EncodeQualityChoice } from '../../services/encodeQuality';
+import type { EditRecipe } from '../../services/editRecipe';
 
 /**
  * Prepares projects for WhatsApp Status per core output requirements
@@ -41,7 +42,8 @@ export class WhatsAppStatusExporter {
     onProgress?: (update: ConvertProgressUpdate) => void,
     signal?: AbortSignal,
     authToken?: string,
-    x264Preset?: EncodeQualityChoice
+    x264Preset?: EncodeQualityChoice,
+    editRecipe?: EditRecipe
   ): Promise<RenderJob> {
     const prepared = await this.prepareProject(project, options);
     const composition = await videoEngine.buildComposition(prepared);
@@ -53,7 +55,7 @@ export class WhatsAppStatusExporter {
 
     return videoEngine.render(
       composition,
-      { ...encode, signal, authToken, x264Preset },
+      { ...encode, signal, authToken, x264Preset, editRecipe },
       onProgress
     );
   }

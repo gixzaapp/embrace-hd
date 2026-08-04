@@ -12,6 +12,7 @@ import { videoEngine } from '../modules/video';
 import { saveExportToGallery, type GalleryItem } from './galleryLibrary';
 import type { ConvertProgressUpdate } from './backendExport';
 import type { EncodeQualityChoice } from './encodeQuality';
+import type { EditRecipe } from './editRecipe';
 import {
   shareMedia,
   shareToWhatsAppChatForHdStatus,
@@ -29,6 +30,8 @@ export type GenerateStatusOptions = {
   authToken?: string;
   /** FFmpeg x264 -preset (speed / quality) */
   x264Preset?: EncodeQualityChoice;
+  /** Edit tab crop/trim/sound — applied on backend Convert */
+  editRecipe?: EditRecipe;
   onProgress?: (update: ConvertProgressUpdate) => void;
   signal?: AbortSignal;
 };
@@ -47,7 +50,8 @@ export class VideoGeneratorService {
     onProgress?: (update: ConvertProgressUpdate) => void,
     signal?: AbortSignal,
     authToken?: string,
-    x264Preset?: EncodeQualityChoice
+    x264Preset?: EncodeQualityChoice,
+    editRecipe?: EditRecipe
   ) {
     const options: StatusExportOptions = {
       ...appConfig.defaults.statusExport,
@@ -59,7 +63,8 @@ export class VideoGeneratorService {
       onProgress,
       signal,
       authToken,
-      x264Preset
+      x264Preset,
+      editRecipe
     );
   }
 
@@ -120,6 +125,7 @@ export class VideoGeneratorService {
     deliveredVia: 'whatsapp' | 'file';
     outputUri?: string;
     galleryItem?: GalleryItem;
+    editsDropped?: boolean;
   }> {
     const statusLengthSec = options.statusLengthSec ?? appConfig.defaults.statusLengthSec;
     const canExportHd = options.canExportHd ?? true;
@@ -150,7 +156,8 @@ export class VideoGeneratorService {
       options.onProgress,
       options.signal,
       options.authToken,
-      options.x264Preset
+      options.x264Preset,
+      options.editRecipe
     );
 
     if (options.signal?.aborted) {
@@ -167,6 +174,7 @@ export class VideoGeneratorService {
         statusLengthSec,
         title: project.title,
         deliveredVia: 'whatsapp',
+        editsDropped: job.editsDropped,
       };
     }
 

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { IonButton, IonContent, IonPage, IonToast } from '@ionic/react';
+import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import {
   AppHeader,
@@ -15,9 +16,11 @@ import {
   setPreferredStatusLength,
 } from '../services/statusLengthPreference';
 import type { StatusLengthSec } from '../core';
+import packageJson from '../../package.json';
 import './Settings.css';
 
 const DELETE_ACCOUNT_URL = 'https://embraceapp.co.uk/delete-account.html';
+const FALLBACK_VERSION = packageJson.version || '1.0.0';
 
 const Settings: React.FC = () => {
   const {
@@ -34,6 +37,16 @@ const Settings: React.FC = () => {
     message: '',
   });
   const [loggingOut, setLoggingOut] = useState(false);
+  const [appVersion, setAppVersion] = useState(FALLBACK_VERSION);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    void CapApp.getInfo()
+      .then((info) => {
+        if (info.version) setAppVersion(info.version);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -111,6 +124,19 @@ const Settings: React.FC = () => {
               <SubscriptionPlans forceShow />
             </section>
           ) : null}
+
+          <section className="settings-section">
+            <h3 className="settings-section-title font-label-sm">About EmbraceHD</h3>
+            <div className="settings-about">
+              <p className="settings-about-copy">
+                Create WhatsApp Status–ready HD video — crop, trim, and sound on
+                device, then convert and share.
+              </p>
+              <p className="settings-about-version">
+                Version <strong>{appVersion}</strong>
+              </p>
+            </div>
+          </section>
 
           <section className="settings-section">
             <h3 className="settings-section-title font-label-sm">Danger zone</h3>

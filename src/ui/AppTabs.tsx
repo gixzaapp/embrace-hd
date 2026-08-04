@@ -8,7 +8,7 @@ import {
   IonTabButton,
   IonTabs,
 } from '@ionic/react';
-import { gridOutline, homeOutline, settingsOutline } from 'ionicons/icons';
+import { homeOutline, imagesOutline, settingsOutline } from 'ionicons/icons';
 import Auth from '../pages/Auth';
 import Home from '../pages/Home';
 import Gallery from '../pages/Gallery';
@@ -77,8 +77,8 @@ export const AppTabs: React.FC = () => {
             <IonLabel>Home</IonLabel>
           </IonTabButton>
           <IonTabButton tab="gallery" href="/gallery" className="app-tab-button">
-            <IonIcon icon={gridOutline} />
-            <IonLabel>Gallery</IonLabel>
+            <IonIcon icon={imagesOutline} />
+            <IonLabel>Library</IonLabel>
           </IonTabButton>
           <IonTabButton tab="settings" href="/settings" className="app-tab-button">
             <IonIcon icon={settingsOutline} />

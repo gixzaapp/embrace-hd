@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import { IonContent, IonPage, IonToast } from '@ionic/react';
+import {
+  IonContent,
+  IonPage,
+  IonToast,
+  useIonViewWillEnter,
+  useIonViewWillLeave,
+} from '@ionic/react';
 import { type MediaSource, type StatusLengthSec } from '../core';
 import {
   adsManager,
   clearEmbraceHdMediaCache,
+  clearGalleryLibrary,
+  clearWorkingMedia,
   fetchConversationWindow,
   getClientBusinessWhatsAppE164,
+  getWorkingMedia,
+  hasMeaningfulEditRecipe,
   isBackendEnabled,
   openBusinessWhatsAppChat,
   pickStatusMedia,
+  setWorkingMedia,
   videoGeneratorService,
   type ConvertPhase,
   type EncodeQualityChoice,
@@ -20,6 +31,7 @@ import {
   AppHeader,
   ConvertButton,
   ConvertProgressModal,
+  EditWorkspace,
   QualityDecisionModal,
   StatusLengthPicker,
   TrialProgressBar,
@@ -29,6 +41,7 @@ import {
   VideoTimelineThumbnails,
   WhatsAppDeliveredModal,
   type ConvertPhaseProgress,
+  type EditWorkspaceHandle,
 } from '../ui';
 import './Home.css';
 
@@ -71,6 +84,7 @@ const Home: React.FC = () => {
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
   const contentRef = useRef<HTMLIonContentElement>(null);
   const convertAnchorRef = useRef<HTMLDivElement>(null);
+  const editWorkspaceRef = useRef<EditWorkspaceHandle | null>(null);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
   const [toast, setToast] = useState<{ open: boolean; message: string }>({
     open: false,
@@ -83,7 +97,6 @@ const Home: React.FC = () => {
   }, [shouldShowAds]);
 
   const scrollConvertIntoView = () => {
-    // Wait for timeline / layout to paint so the Convert button isn't still off-screen.
     window.setTimeout(() => {
       void (async () => {
         const content = contentRef.current;
@@ -105,13 +118,55 @@ const Home: React.FC = () => {
     }, 180);
   };
 
-  // After pick (and again when duration/timeline settles), bring Convert into view.
   useEffect(() => {
     if (!selectedMedia?.uri) return;
     scrollConvertIntoView();
   }, [selectedMedia?.uri, videoDurationSec]);
 
-  // Trial ended → force 30s Status (60s requires Premium / active trial).
+  const applyMedia = (media: MediaSource, toastMessage?: string) => {
+    setSelectedMedia(media);
+    setWorkingMedia(media);
+    void (async () => {
+      let durationSec = 0;
+      if (media.kind !== 'image' && media.uri) {
+        try {
+          durationSec = await probeVideoDurationSec(media.uri);
+        } catch {
+          // ignore probe failures
+        }
+      }
+      setVideoDurationSec(durationSec);
+      if (toastMessage) {
+        setToast({ open: true, message: toastMessage });
+      } else {
+        setToast({
+          open: true,
+          message: durationSec
+            ? `Selected · ${Math.round(durationSec)}s video`
+            : `Selected: ${media.name ?? media.kind ?? 'media'}`,
+        });
+      }
+    })();
+  };
+
+  const selectedUriRef = useRef<string | null>(null);
+  selectedUriRef.current = selectedMedia?.uri ?? null;
+
+  // Library → Home (or restore working media when Home has no selection)
+  useIonViewWillEnter(() => {
+    const working = getWorkingMedia();
+    if (!working?.uri || working.kind === 'image') return;
+    if (selectedUriRef.current === working.uri) return;
+    applyMedia(
+      working,
+      `Ready · tap Convert${working.name ? ` · ${working.name}` : ''}`
+    );
+  });
+
+  useIonViewWillLeave(() => {
+    editWorkspaceRef.current?.pausePreview();
+  });
+
   useEffect(() => {
     if (canUse60sStatus) return;
     if (statusLengthSec === 30) return;
@@ -125,20 +180,7 @@ const Home: React.FC = () => {
     setBusy(true);
     try {
       const media = await pickStatusMedia();
-      setSelectedMedia(media);
-
-      let durationSec = 0;
-      if (media.kind !== 'image' && media.uri) {
-        durationSec = await probeVideoDurationSec(media.uri);
-      }
-      setVideoDurationSec(durationSec);
-
-      setToast({
-        open: true,
-        message: durationSec
-          ? `Selected · ${Math.round(durationSec)}s video`
-          : `Selected: ${media.name ?? media.kind ?? 'media'}`,
-      });
+      applyMedia(media);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not pick media';
       if (!/cancel|dismiss|No media selected/i.test(message)) {
@@ -171,7 +213,6 @@ const Home: React.FC = () => {
       return;
     }
 
-    // Require an open WhatsApp 24h conversation window before upload (backend delivery).
     if (isBackendEnabled()) {
       if (!isAuthenticated || !token) {
         setToast({
@@ -216,6 +257,22 @@ const Home: React.FC = () => {
       }
     }
 
+    const recipePreview =
+      selectedMedia.kind !== 'image'
+        ? editWorkspaceRef.current?.getRecipe()
+        : undefined;
+    if (
+      selectedMedia.kind !== 'image' &&
+      editWorkspaceRef.current &&
+      recipePreview === null
+    ) {
+      setToast({
+        open: true,
+        message: 'Pick a music file in Sound, or turn Mute off',
+      });
+      return;
+    }
+
     setEncodeQuality(DEFAULT_ENCODE_QUALITY);
     setQualityOpen(true);
   };
@@ -233,6 +290,26 @@ const Home: React.FC = () => {
     setEncodeQuality(quality);
     setQualityOpen(false);
 
+    editWorkspaceRef.current?.pausePreview();
+    const recipeRaw = editWorkspaceRef.current?.getRecipe();
+    if (editWorkspaceRef.current && recipeRaw === null) {
+      setToast({
+        open: true,
+        message: 'Pick a music file in Sound, or turn Mute off',
+      });
+      return;
+    }
+    const editRecipe = recipeRaw ?? undefined;
+
+    if (hasMeaningfulEditRecipe(editRecipe) && !isBackendEnabled()) {
+      setToast({
+        open: true,
+        message:
+          'Edit settings need online Convert — connect the API or remove edits',
+      });
+      return;
+    }
+
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
@@ -241,7 +318,6 @@ const Home: React.FC = () => {
 
     interstitialPromiseRef.current = shouldShowAds
       ? (async () => {
-          // Let the convert progress UI paint briefly before the full-screen ad.
           await new Promise((r) => setTimeout(r, 2000));
           await adsManager.showConvertInterstitial();
         })().catch((err) => {
@@ -256,12 +332,12 @@ const Home: React.FC = () => {
         canExportHd,
         authToken: token ?? undefined,
         x264Preset: quality,
+        editRecipe,
         signal: controller.signal,
         onProgress: (update) => {
           setConvertActivePhase(update.phase);
           setConvertPhases((prev) => {
             const next = { ...prev };
-            // Keep earlier phases completed at 100%
             if (update.phase === 'convert' || update.phase === 'send') {
               next.upload = 1;
             }
@@ -277,10 +353,13 @@ const Home: React.FC = () => {
       setConvertActivePhase('send');
       setConvertOpen(false);
 
-      // Drop selection + staged cache copies — job is done on WhatsApp.
       setSelectedMedia(null);
       setVideoDurationSec(0);
+      clearWorkingMedia();
       void clearEmbraceHdMediaCache();
+      void clearGalleryLibrary(exported.galleryItem?.id).catch((err) => {
+        console.warn('[Home] clear Library gallery failed', err);
+      });
 
       try {
         await interstitialPromiseRef.current;
@@ -292,12 +371,16 @@ const Home: React.FC = () => {
         setDeliveredOpen(true);
         setToast({
           open: true,
-          message: 'Sent — check your WhatsApp',
+          message: exported.editsDropped
+            ? 'Sent — check WhatsApp (server update needed for crop/trim/sound)'
+            : 'Sent — check your WhatsApp',
         });
       } else {
         setToast({
           open: true,
-          message: `Saved to Gallery · ${exported.statusLengthSec}s ready`,
+          message: exported.editsDropped
+            ? `HD ready · ${exported.statusLengthSec}s (edits skipped — update server)`
+            : `HD ready · ${exported.statusLengthSec}s`,
         });
       }
     } catch (err) {
@@ -342,6 +425,16 @@ const Home: React.FC = () => {
             disabled={controlsDisabled}
             onClick={onPickMedia}
           />
+
+          {selectedMedia?.uri && selectedMedia.kind !== 'image' ? (
+            <EditWorkspace
+              ref={editWorkspaceRef}
+              source={selectedMedia}
+              disabled={controlsDisabled}
+              onChangeSource={() => void onPickMedia()}
+              onToast={(message) => setToast({ open: true, message })}
+            />
+          ) : null}
 
           <StatusLengthPicker
             value={statusLengthSec}

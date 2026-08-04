@@ -18,6 +18,7 @@ import {
   isConversationWindowOpen,
   type AuthUser,
 } from './userStore.js';
+import type { EditRecipe } from './editRecipe.js';
 
 export type ExportJobStatus = 'queued' | 'processing' | 'done' | 'failed';
 
@@ -36,6 +37,10 @@ export type ExportJob = {
   x264Preset: X264EncodePreset;
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
+  /** Edit-tab recipe (not exposed on public poll). */
+  editRecipe?: EditRecipe;
+  /** Local music upload path for soundMode=file (not persisted long-term). */
+  musicPath?: string;
   sizeBytes?: number;
   userId?: string;
   createdAt: string;
@@ -158,10 +163,13 @@ async function persist(job: ExportJob): Promise<void> {
 }
 
 /** Public poll payload — never exposes a download URL for WhatsApp delivery. */
-export function publicExportJob(job: ExportJob): Omit<ExportJob, 'downloadPath'> & {
+export function publicExportJob(job: ExportJob): Omit<
+  ExportJob,
+  'downloadPath' | 'editRecipe' | 'musicPath'
+> & {
   downloadPath?: undefined;
 } {
-  const { downloadPath: _d, ...rest } = job;
+  const { downloadPath: _d, editRecipe: _e, musicPath: _m, ...rest } = job;
   return {
     ...rest,
     deliveredVia: job.deliveredVia ?? (job.downloadPath ? 'download' : 'whatsapp'),
@@ -204,6 +212,8 @@ export async function enqueueExportJob(options: {
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
   x264Preset?: X264EncodePreset;
+  editRecipe?: EditRecipe;
+  musicPath?: string;
   user: AuthUser;
 }): Promise<ExportJob> {
   if (!isConversationWindowOpen(options.user.lastInboundWhatsAppAt)) {
@@ -220,17 +230,20 @@ export async function enqueueExportJob(options: {
     x264Preset: normalizeClientX264Preset(options.x264Preset),
     statusLengthSec: options.statusLengthSec,
     delivery: options.delivery,
+    editRecipe: options.editRecipe,
+    musicPath: options.musicPath,
     userId: options.user.id,
     createdAt: now,
     updatedAt: now,
   };
   await persist(job);
 
-  void runExportJob(job.jobId, options.inputPath, options.user.phoneE164).catch(
-    (err) => {
-      console.error('[ExportJob] unhandled', job.jobId, err);
-    }
-  );
+  void runExportJob(job.jobId, options.inputPath, options.user.phoneE164, {
+    editRecipe: options.editRecipe,
+    musicPath: options.musicPath,
+  }).catch((err) => {
+    console.error('[ExportJob] unhandled', job.jobId, err);
+  });
 
   return job;
 }
@@ -245,6 +258,7 @@ export async function enqueueRemoteExportJob(options: {
   statusLengthSec: 30 | 60;
   delivery: ExportDelivery;
   x264Preset?: X264EncodePreset;
+  editRecipe?: EditRecipe;
   user: AuthUser;
 }): Promise<ExportJob> {
   if (!isConversationWindowOpen(options.user.lastInboundWhatsAppAt)) {
@@ -261,6 +275,7 @@ export async function enqueueRemoteExportJob(options: {
     x264Preset: normalizeClientX264Preset(options.x264Preset),
     statusLengthSec: options.statusLengthSec,
     delivery: options.delivery,
+    editRecipe: options.editRecipe,
     userId: options.user.id,
     createdAt: now,
     updatedAt: now,
@@ -274,7 +289,9 @@ export async function enqueueRemoteExportJob(options: {
         downloadUrl: options.downloadUrl,
         fileName: options.fileName,
       });
-      await runExportJob(job.jobId, inputPath, options.user.phoneE164);
+      await runExportJob(job.jobId, inputPath, options.user.phoneE164, {
+        editRecipe: options.editRecipe,
+      });
     } catch (err) {
       console.error('[ExportJob] remote pull/run failed', job.jobId, err);
       const current = await getExportJob(job.jobId);
@@ -297,7 +314,8 @@ export async function enqueueRemoteExportJob(options: {
 async function runExportJob(
   jobId: string,
   inputPath: string,
-  phoneE164: string
+  phoneE164: string,
+  extras?: { editRecipe?: EditRecipe; musicPath?: string }
 ): Promise<void> {
   const job = await getExportJob(jobId);
   if (!job) return;
@@ -307,6 +325,7 @@ async function runExportJob(
   await persist(job);
 
   const outputPaths: string[] = [];
+  const musicPath = extras?.musicPath ?? job.musicPath;
 
   try {
     const parts = await exportWhatsAppHdSegments({
@@ -315,6 +334,8 @@ async function runExportJob(
       statusLengthSec: job.statusLengthSec,
       delivery: job.delivery,
       x264Preset: normalizeClientX264Preset(job.x264Preset),
+      editRecipe: extras?.editRecipe ?? job.editRecipe,
+      musicPath,
     });
 
     if (!parts.length) {
@@ -362,6 +383,9 @@ async function runExportJob(
     await persist(job);
   } finally {
     await fs.unlink(inputPath).catch(() => undefined);
+    if (musicPath) {
+      await fs.unlink(musicPath).catch(() => undefined);
+    }
     for (const p of outputPaths) {
       await fs.unlink(p).catch(() => undefined);
     }

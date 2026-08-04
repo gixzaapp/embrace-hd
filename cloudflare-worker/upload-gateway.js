@@ -74,6 +74,21 @@ async function handleUpload(request, env) {
     request.headers.get('X-Embrace-X264-Preset') ||
     'veryfast'
   ).toLowerCase();
+  const editRecipeRaw = url.searchParams.get('editRecipe');
+  let editRecipe = null;
+  if (editRecipeRaw) {
+    try {
+      editRecipe = JSON.parse(editRecipeRaw);
+      // Gateway cannot carry a music file — drop file mode; Hetzner soft-falls back too.
+      if (editRecipe && editRecipe.soundMode === 'file') {
+        editRecipe = { ...editRecipe, soundMode: 'mute' };
+      }
+    } catch {
+      // Older / bad clients: ignore recipe, still convert the video.
+      console.warn('ignoring invalid editRecipe query');
+      editRecipe = null;
+    }
+  }
   const statusLengthSec = Number(statusLengthRaw);
   if (statusLengthSec !== 30 && statusLengthSec !== 60) {
     return new Response('X-Embrace-Status-Length must be 30 or 60', { status: 400 });
@@ -122,6 +137,7 @@ async function handleUpload(request, env) {
     statusLengthSec,
     delivery,
     x264Preset,
+    editRecipe,
   });
 
   if (!notified.ok) {
@@ -152,6 +168,7 @@ async function notifyHetzner({
   statusLengthSec,
   delivery,
   x264Preset,
+  editRecipe,
 }) {
   const base = String(env.HETZNER_BASE_URL || '').replace(/\/$/, '');
   const publicBase = String(env.WORKER_PUBLIC_URL || '').replace(/\/$/, '');
@@ -162,6 +179,17 @@ async function notifyHetzner({
   const downloadUrl = `${publicBase}/videos/${fileName}`;
 
   try {
+    const body = {
+      fileName,
+      downloadUrl,
+      preset,
+      statusLengthSec,
+      delivery,
+      x264Preset,
+    };
+    if (editRecipe) {
+      body.editRecipe = editRecipe;
+    }
     const res = await fetch(`${base}/v1/export/remote`, {
       method: 'POST',
       headers: {
@@ -169,14 +197,7 @@ async function notifyHetzner({
         'Content-Type': 'application/json',
         'X-Internal-Secret': env.WORKER_HETZNER_SECRET,
       },
-      body: JSON.stringify({
-        fileName,
-        downloadUrl,
-        preset,
-        statusLengthSec,
-        delivery,
-        x264Preset,
-      }),
+      body: JSON.stringify(body),
     });
 
     const text = await res.text();

@@ -15,6 +15,8 @@ export type RemoteAppConfig = {
     nativeWatermark: boolean;
     showLogout: boolean;
     showUnlockPremium: boolean;
+    /** Present on new backends that apply crop/trim/sound during Convert. */
+    editRecipe?: boolean;
   };
   minAppVersion: string;
   updatedAt: string;

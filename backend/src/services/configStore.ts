@@ -19,6 +19,8 @@ const DEFAULT_CONFIG: AppConfig = {
     nativeWatermark: false,
     showLogout: true,
     showUnlockPremium: false,
+    /** New servers advertise Edit-recipe Convert support for clients. */
+    editRecipe: true,
   },
   minAppVersion: '0.1.0',
   updatedAt: new Date().toISOString(),

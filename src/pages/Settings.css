@@ -78,6 +78,33 @@
   margin-top: 4px;
 }
 
+.settings-about {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-about-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--eh-on-surface-variant);
+}
+
+.settings-about-version {
+  margin: 0;
+  font-size: 13px;
+  color: var(--eh-on-surface);
+}
+
+.settings-about-version strong {
+  font-weight: 700;
+}
+
 .settings-delete-btn {
   margin-top: 0;
 }

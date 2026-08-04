@@ -1,4 +1,5 @@
 import type { HdPresetChoice, MediaSource, VideoProject } from '../../core';
+import type { EditRecipe } from '../../services/editRecipe';
 
 export type VideoComposition = {
   project: VideoProject;
@@ -27,4 +28,6 @@ export type EncodeOptions = {
   signal?: AbortSignal;
   /** Session token — required when backend delivers via WhatsApp */
   authToken?: string;
+  /** Edit tab recipe applied on backend Convert */
+  editRecipe?: EditRecipe;
 };

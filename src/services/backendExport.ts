@@ -3,6 +3,12 @@ import { getApiBaseUrl, isBackendEnabled, ApiError } from './apiClient';
 import { ensureLocalMediaFile } from './localMediaPath';
 import type { HdPresetChoice, HdPresetKey, StatusLengthSec } from '../core';
 import type { EncodeQualityChoice } from './encodeQuality';
+import {
+  hasMeaningfulEditRecipe,
+  toEditRecipeWire,
+  type EditRecipe,
+} from './editRecipe';
+import { fetchRemoteConfig } from './backendEntitlements';
 
 /** Progress is 0–1 within the current phase (each phase starts at 0). */
 export type ConvertPhase = 'upload' | 'convert' | 'send';
@@ -21,6 +27,8 @@ export type BackendExportRequest = {
   delivery?: 'status' | 'chat-hd';
   /** FFmpeg x264 -preset (speed / quality) */
   x264Preset?: EncodeQualityChoice;
+  /** Crop/trim/sound (applied on server when supported) */
+  editRecipe?: EditRecipe;
   /** Required — export is authenticated and delivered to this user's WhatsApp */
   authToken: string;
   signal?: AbortSignal;
@@ -34,6 +42,8 @@ export type BackendExportResult = {
   statusLengthSec: StatusLengthSec;
   sizeBytes: number;
   engine: 'backend-ffmpeg';
+  /** True when edits were requested but the server/path could not apply them. */
+  editsDropped?: boolean;
 };
 
 function getUploadGatewayUrl(): string | null {
@@ -66,10 +76,49 @@ async function uriToBlob(uri: string): Promise<Blob> {
   return res.blob();
 }
 
+let editRecipeSupportCache:
+  | { at: number; supported: boolean }
+  | null = null;
+
+/** Newer servers advertise featureFlags.editRecipe; older configs omit it. */
+async function serverSupportsEditRecipe(): Promise<boolean> {
+  const now = Date.now();
+  if (editRecipeSupportCache && now - editRecipeSupportCache.at < 5 * 60_000) {
+    return editRecipeSupportCache.supported;
+  }
+  try {
+    const config = await fetchRemoteConfig();
+    const supported = config.featureFlags?.editRecipe === true;
+    editRecipeSupportCache = { at: now, supported };
+    return supported;
+  } catch {
+    // Unknown — try with recipe; upload path has its own retry.
+    return true;
+  }
+}
+
+function looksLikeLegacyExportRejection(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  if (err.status === 404 || err.status === 413) return false;
+  const msg = (err.message || '').toLowerCase();
+  return (
+    err.status === 400 ||
+    err.status === 415 ||
+    /unexpected field|unknown|editrecipe|music|multipart|limit_unexpected|not allowed|invalid export/i.test(
+      msg
+    )
+  );
+}
+
 /**
  * Upload video for FFmpeg convert + WhatsApp delivery.
  * When VITE_UPLOAD_GATEWAY_URL is set, streams to Cloudflare (edge) then polls Hetzner.
  * Otherwise uploads multipart directly to the API (fine for LAN / nearby regions).
+ *
+ * Backward compatible:
+ * - Omits editRecipe when the server does not advertise support (or recipe is no-op).
+ * - Meaningful edits always use direct multipart (so an old gateway cannot drop them).
+ * - If an older server rejects music/editRecipe fields, retries without edits.
  */
 export async function exportViaBackend(
   request: BackendExportRequest
@@ -99,10 +148,59 @@ export async function exportViaBackend(
   }
   report(request, 'upload', 0.2);
 
+  const wantsEdits = hasMeaningfulEditRecipe(request.editRecipe);
+  let activeRecipe =
+    wantsEdits && request.editRecipe ? request.editRecipe : undefined;
+  let editsDropped = false;
+
+  if (wantsEdits) {
+    const supported = await serverSupportsEditRecipe();
+    if (!supported) {
+      activeRecipe = undefined;
+      editsDropped = true;
+      console.warn(
+        '[Export] server lacks featureFlags.editRecipe — converting without edits'
+      );
+    }
+  }
+
   const gateway = getUploadGatewayUrl();
-  const accepted = gateway
-    ? await uploadViaGateway(gateway, blob, request)
-    : await uploadDirect(base, blob, request);
+  const needsMusicFile =
+    activeRecipe?.soundMode === 'file' && !!activeRecipe.musicUri;
+  // Meaningful edits → direct multipart so older gateways cannot strip the recipe.
+  const preferGateway = Boolean(gateway) && !needsMusicFile && !activeRecipe;
+
+  const runUpload = (recipe: EditRecipe | undefined) => {
+    const req: BackendExportRequest = { ...request, editRecipe: recipe };
+    return preferGateway && gateway
+      ? uploadViaGateway(gateway, blob, req)
+      : uploadDirect(base, blob, req);
+  };
+
+  let accepted: { jobId?: string };
+  try {
+    accepted = await runUpload(activeRecipe);
+  } catch (err) {
+    if (
+      activeRecipe &&
+      looksLikeLegacyExportRejection(err) &&
+      !(err instanceof DOMException && err.name === 'AbortError')
+    ) {
+      console.warn(
+        '[Export] server rejected editRecipe/music — retrying without edits',
+        err
+      );
+      activeRecipe = undefined;
+      editsDropped = true;
+      // Force direct without recipe (matches legacy clients)
+      accepted = await uploadDirect(base, blob, {
+        ...request,
+        editRecipe: undefined,
+      });
+    } else {
+      throw err;
+    }
+  }
 
   if (!accepted.jobId) {
     throw new Error('Backend did not return a job id');
@@ -114,7 +212,6 @@ export async function exportViaBackend(
   report(request, 'convert', 1);
 
   report(request, 'send', 0);
-  // Delivery already finished on the server when job is done — brief send phase for UX.
   report(request, 'send', 1);
 
   return {
@@ -127,6 +224,7 @@ export async function exportViaBackend(
     statusLengthSec: job.statusLengthSec || request.statusLengthSec,
     sizeBytes: job.sizeBytes || 0,
     engine: 'backend-ffmpeg',
+    editsDropped: editsDropped || undefined,
   };
 }
 
@@ -146,9 +244,16 @@ async function uploadViaGateway(
   let res: Response;
   try {
     const x264 = request.x264Preset ?? 'veryfast';
-    // Pass quality via query string — avoids CORS preflight rejection when the
-    // worker Allow-Headers list has not been redeployed with a new custom header.
-    const uploadUrl = `${gatewayBase}/upload?x264Preset=${encodeURIComponent(x264)}`;
+    const recipeWire =
+      request.editRecipe && hasMeaningfulEditRecipe(request.editRecipe)
+        ? toEditRecipeWire(request.editRecipe)
+        : undefined;
+    // Quality + editRecipe via query — avoids CORS Allow-Headers churn.
+    const params = new URLSearchParams({ x264Preset: x264 });
+    if (recipeWire) {
+      params.set('editRecipe', JSON.stringify(recipeWire));
+    }
+    const uploadUrl = `${gatewayBase}/upload?${params.toString()}`;
     res = await fetch(uploadUrl, {
       method: 'PUT',
       body: blob,
@@ -207,6 +312,21 @@ async function uploadDirect(
   form.append('statusLengthSec', String(request.statusLengthSec));
   form.append('delivery', request.delivery ?? 'status');
   form.append('x264Preset', request.x264Preset ?? 'veryfast');
+  if (request.editRecipe && hasMeaningfulEditRecipe(request.editRecipe)) {
+    form.append(
+      'editRecipe',
+      JSON.stringify(toEditRecipeWire(request.editRecipe))
+    );
+  }
+  if (
+    request.editRecipe?.soundMode === 'file' &&
+    request.editRecipe.musicUri
+  ) {
+    const musicBlob = await uriToBlob(request.editRecipe.musicUri);
+    const musicName =
+      request.editRecipe.musicName?.replace(/[^\w.\-]+/g, '_') || 'music.mp3';
+    form.append('music', musicBlob, musicName);
+  }
 
   let tick = 0.3;
   const pulse = window.setInterval(() => {
