@@ -26,15 +26,21 @@ function requireSlackSecret(req: Request, _res: Response, next: NextFunction): v
   next();
 }
 
-/** Slack slash-command / Events HMAC verification (raw body required). */
-function verifySlackSignature(
-  req: SlackRequest,
-  _res: Response,
-  next: NextFunction
-): void {
+function slackText(text: string) {
+  return {
+    response_type: 'ephemeral' as const,
+    text,
+  };
+}
+
+/** Always 200 so Slack shows the message instead of "app did not respond". */
+function reply(res: Response, text: string): void {
+  res.status(200).json(slackText(text));
+}
+
+function verifySlackSignatureOrExplain(req: SlackRequest): string | null {
   if (!env.slackSigningSecret) {
-    next(new HttpError(503, 'SLACK_SIGNING_SECRET is not configured'));
-    return;
+    return 'Server misconfigured: SLACK_SIGNING_SECRET is missing on Hetzner.';
   }
 
   const timestamp = req.headers['x-slack-request-timestamp'];
@@ -45,35 +51,55 @@ function verifySlackSignature(
     typeof signature !== 'string' ||
     !rawBody
   ) {
-    next(new HttpError(401, 'Missing Slack signature headers'));
-    return;
+    console.warn('[Slack] missing signature headers or raw body');
+    return 'Could not verify Slack request (missing signature). Redeploy API and check Request URL.';
   }
 
   const ts = Number(timestamp);
   if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > 60 * 5) {
-    next(new HttpError(401, 'Stale Slack request'));
-    return;
+    console.warn('[Slack] stale timestamp', timestamp);
+    return 'Slack request expired (clock skew?). Check server time.';
   }
 
   const base = `v0:${timestamp}:${rawBody.toString('utf8')}`;
   const expected =
     'v0=' +
-    crypto.createHmac('sha256', env.slackSigningSecret).update(base).digest('hex');
+    crypto
+      .createHmac('sha256', env.slackSigningSecret)
+      .update(base, 'utf8')
+      .digest('hex');
 
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signature);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    next(new HttpError(401, 'Invalid Slack signature'));
-    return;
+  try {
+    const a = Buffer.from(expected, 'utf8');
+    const b = Buffer.from(signature, 'utf8');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      console.warn('[Slack] signature mismatch');
+      return 'Invalid Slack signature. Check SLACK_SIGNING_SECRET matches the app Signing Secret.';
+    }
+  } catch (err) {
+    console.warn('[Slack] signature compare failed', err);
+    return 'Invalid Slack signature.';
   }
-  next();
+  return null;
 }
 
-function slackText(text: string) {
-  return {
-    response_type: 'ephemeral' as const,
-    text,
-  };
+function resolveAction(command: string, text: string): 'count' | 'recent' | 'help' {
+  const c = command.toLowerCase();
+  const t = text.trim().toLowerCase();
+  if (t === 'help' || t === '?') return 'help';
+  if (c.includes('recent') || t === 'recent' || t.startsWith('recent ') || t === 'names') {
+    return 'recent';
+  }
+  if (
+    c.includes('count') ||
+    c.includes('users') ||
+    t === 'count' ||
+    t === 'users' ||
+    t === ''
+  ) {
+    return 'count';
+  }
+  return 'help';
 }
 
 async function recentNamesText(limit = 10): Promise<string> {
@@ -85,54 +111,46 @@ async function recentNamesText(limit = 10): Promise<string> {
 
 /**
  * POST /v1/slack/commands
- * Slack slash command Request URL (form-urlencoded + signing secret).
- *
- * Configure two commands (same URL):
- *   /eh-users   → user count
- *   /eh-recent  → last 10 names
- *
- * Or one command /eh with text: count | recent
+ * Slack slash command Request URL.
+ * Body must be parsed as raw bytes first (see app.ts) for signature check.
  */
-slackRouter.post('/commands', verifySlackSignature, async (req, res, next) => {
+slackRouter.post('/commands', async (req: SlackRequest, res) => {
   try {
-    const command = String(req.body?.command ?? '').toLowerCase();
-    const text = String(req.body?.text ?? '')
-      .trim()
-      .toLowerCase();
-
-    let action: 'count' | 'recent' | 'help' = 'help';
-    if (command.includes('recent') || text.startsWith('recent') || text === 'names') {
-      action = 'recent';
-    } else if (
-      command.includes('count') ||
-      command.includes('users') ||
-      text === 'count' ||
-      text === 'users' ||
-      text === ''
-    ) {
-      // bare /eh-users or /eh with no args → count
-      if (command.includes('recent')) action = 'recent';
-      else action = text.startsWith('recent') ? 'recent' : 'count';
+    // Slack URL round-trip check when saving a slash command
+    if (req.body?.ssl_check === '1' || req.body?.ssl_check === 1) {
+      res.status(200).send('OK');
+      return;
     }
 
+    const sigError = verifySlackSignatureOrExplain(req);
+    if (sigError) {
+      reply(res, sigError);
+      return;
+    }
+
+    const command = String(req.body?.command ?? '');
+    const text = String(req.body?.text ?? '');
+    const action = resolveAction(command, text);
+
     if (action === 'help') {
-      res.json(
-        slackText(
-          'Embrace HD: use `/eh-users` for count, `/eh-recent` for last 10 names, or `/eh count` / `/eh recent`.'
-        )
+      reply(
+        res,
+        'Embrace HD: `/eh-users` = count, `/eh-recent` = last 10 names.'
       );
       return;
     }
 
     if (action === 'count') {
       const count = await countUsers();
-      res.json(slackText(`Embrace HD users: *${count}*`));
+      reply(res, `Embrace HD users: *${count}*`);
       return;
     }
 
-    res.json(slackText(await recentNamesText(10)));
+    reply(res, await recentNamesText(10));
   } catch (err) {
-    next(err);
+    console.error('[Slack] command failed', err);
+    const message = err instanceof Error ? err.message : 'Command failed';
+    reply(res, `Error: ${message}`);
   }
 });
 

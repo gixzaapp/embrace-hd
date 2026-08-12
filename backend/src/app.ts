@@ -66,15 +66,27 @@ export async function createApp() {
     })
   );
   app.use(express.json({ limit: '64kb' }));
-  // Slack slash commands post form bodies; capture raw bytes for signature check.
+  /**
+   * Slack slash commands: keep the exact raw body for HMAC, then parse form fields.
+   * (urlencoded `verify` alone is easy to break behind proxies.)
+   */
   app.use(
     '/v1/slack/commands',
-    express.urlencoded({
-      extended: true,
-      verify: (req, _res, buf) => {
-        (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
-      },
-    })
+    express.raw({ type: '*/*', limit: '256kb' }),
+    (req, _res, next) => {
+      const slackReq = req as express.Request & { rawBody?: Buffer };
+      const buf = Buffer.isBuffer(req.body)
+        ? req.body
+        : Buffer.from(typeof req.body === 'string' ? req.body : '');
+      slackReq.rawBody = buf;
+      const params = new URLSearchParams(buf.toString('utf8'));
+      const body: Record<string, string> = {};
+      for (const [k, v] of params.entries()) {
+        body[k] = v;
+      }
+      req.body = body;
+      next();
+    }
   );
   app.use(requestCounter);
   startRequestLogging();
