@@ -14,6 +14,7 @@ import {
   ddbGet,
   ddbPut,
   ddbQueryByGsi1,
+  ddbScanUsers,
   epochSeconds,
 } from './dynamo.js';
 import {
@@ -139,10 +140,18 @@ async function reencryptLegacyPostgresPhones(): Promise<void> {
 
 /* ----------------------------- Users ----------------------------- */
 
+export type RecentUserName = {
+  name: string;
+  createdAt: string;
+};
+
 export interface UsersRepo {
   getById(id: string): Promise<AuthUser | null>;
   findByPhone(phoneE164: string): Promise<AuthUser | null>;
   put(user: AuthUser): Promise<void>;
+  count(): Promise<number>;
+  /** Newest users first (by createdAt). Names may be placeholders. */
+  listRecent(limit: number): Promise<RecentUserName[]>;
 }
 
 function mapUserRow(row: {
@@ -187,6 +196,21 @@ const fileUsersRepo = (): UsersRepo => {
     async put(user) {
       await c.put(user.id, toStoredUser(user));
     },
+    async count() {
+      const all = await c.values();
+      return all.length;
+    },
+    async listRecent(limit) {
+      const all = await c.values();
+      return all
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, Math.max(0, limit))
+        .map((u) => ({
+          name: u.name?.trim() || '(no name)',
+          createdAt: u.createdAt,
+        }));
+    },
   };
 };
 
@@ -208,6 +232,21 @@ const dynamoUsersRepo = (): UsersRepo => ({
       gsi1pk: `PHONE#${stored.phoneLookup}`,
       ...stored,
     });
+  },
+  async count() {
+    const items = await ddbScanUsers<StoredUser>();
+    return items.length;
+  },
+  async listRecent(limit) {
+    const items = await ddbScanUsers<StoredUser>();
+    return items
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, Math.max(0, limit))
+      .map((u) => ({
+        name: u.name?.trim() || '(no name)',
+        createdAt: u.createdAt,
+      }));
   },
 });
 
@@ -249,6 +288,24 @@ const postgresUsersRepo = (): UsersRepo => ({
         stored.updatedAt,
       ]
     );
+  },
+  async count() {
+    const { rows } = await query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM users'
+    );
+    return Number(rows[0]?.count ?? 0);
+  },
+  async listRecent(limit) {
+    const { rows } = await query<{ name: string | null; created_at: Date | string }>(
+      `SELECT name, created_at FROM users
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [Math.max(0, limit)]
+    );
+    return rows.map((row) => ({
+      name: row.name?.trim() || '(no name)',
+      createdAt: new Date(row.created_at).toISOString(),
+    }));
   },
 });
 

@@ -13,6 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      fdsf
     image: embrace-hd-api:latest
     platform: linux/amd64
     restart: unless-stopped

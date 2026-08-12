@@ -17,6 +17,9 @@ import { BottomBannerAd } from './BottomBannerAd';
 import { useAuth } from './AuthProvider';
 import { useTrial } from './TrialProvider';
 
+/** Set true to show Library tab again (saved converts / share). */
+const SHOW_LIBRARY_TAB = false;
+
 /**
  * Tab shell gated by WhatsApp OTP auth.
  * Unauthenticated users only reach /auth.
@@ -53,8 +56,9 @@ export const AppTabs: React.FC = () => {
           <Route exact path="/home">
             <Home />
           </Route>
+          {/* Page kept for a future Library tab / deep link */}
           <Route exact path="/gallery">
-            <Gallery />
+            {SHOW_LIBRARY_TAB ? <Gallery /> : <Redirect to="/home" />}
           </Route>
           <Route exact path="/settings">
             <Settings />
@@ -76,10 +80,12 @@ export const AppTabs: React.FC = () => {
             <IonIcon icon={homeOutline} />
             <IonLabel>Home</IonLabel>
           </IonTabButton>
-          <IonTabButton tab="gallery" href="/gallery" className="app-tab-button">
-            <IonIcon icon={imagesOutline} />
-            <IonLabel>Library</IonLabel>
-          </IonTabButton>
+          {SHOW_LIBRARY_TAB ? (
+            <IonTabButton tab="gallery" href="/gallery" className="app-tab-button">
+              <IonIcon icon={imagesOutline} />
+              <IonLabel>Library</IonLabel>
+            </IonTabButton>
+          ) : null}
           <IonTabButton tab="settings" href="/settings" className="app-tab-button">
             <IonIcon icon={settingsOutline} />
             <IonLabel>Settings</IonLabel>
