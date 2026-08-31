@@ -72,6 +72,12 @@ export type TrialRecord = {
   claimedAt: string;
 };
 
+export type UserTrialRecord = {
+  userId: string;
+  startDateIso: string;
+  claimedAt: string;
+};
+
 export type AuthUser = {
   id: string;
   phoneE164: string;

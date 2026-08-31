@@ -24,7 +24,7 @@ export type GenerateStatusOptions = {
   statusLengthSec?: StatusLengthSec;
   /** Required — picked video or image */
   source: MediaSource;
-  /** From entitlement rules — expired trial blocks export */
+  /** From entitlement rules — false only when export is blocked server-side */
   canExportHd?: boolean;
   /** Session token for authenticated backend WhatsApp delivery */
   authToken?: string;
@@ -131,7 +131,7 @@ export class VideoGeneratorService {
     const canExportHd = options.canExportHd ?? true;
 
     if (!canExportHd) {
-      throw new Error('HD export is locked — trial expired. Subscribe to continue.');
+      throw new Error('Export is unavailable right now. Try again, or subscribe in Settings.');
     }
 
     if (!options.source?.uri) {

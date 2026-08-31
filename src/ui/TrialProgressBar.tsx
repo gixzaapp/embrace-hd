@@ -18,8 +18,8 @@ export const TrialProgressBar: React.FC = () => {
     valueLabel = 'ACTIVE';
     percent = 100;
   } else if (isTrialExpired || status.phase === 'expired') {
-    label = 'TRIAL';
-    valueLabel = 'ENDED';
+    label = 'PLAN';
+    valueLabel = 'FREE · ADS';
     percent = 100;
   } else if (status.phase === 'active') {
     const used = Math.max(
@@ -46,7 +46,7 @@ export const TrialProgressBar: React.FC = () => {
         </span>
         <span
           className={`font-label-sm trial-progress-value${
-            isTrialExpired && !isSubscribed ? ' trial-progress-value--locked' : ''
+            isTrialExpired && !isSubscribed ? ' trial-progress-value--free' : ''
           }`}
         >
           {valueLabel}
@@ -55,7 +55,7 @@ export const TrialProgressBar: React.FC = () => {
       <div className="trial-progress-track">
         <div
           className={`trial-progress-fill${
-            isTrialExpired && !isSubscribed ? ' trial-progress-fill--locked' : ''
+            isTrialExpired && !isSubscribed ? ' trial-progress-fill--free' : ''
           }`}
           style={{ width: `${percent}%` }}
         >

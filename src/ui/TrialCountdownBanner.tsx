@@ -3,7 +3,7 @@ import './TrialCountdownBanner.css';
 
 /**
  * Active trial → countdown.
- * Expired → HD locked + ads.
+ * Expired → free plan with ads (convert still available).
  * Premium → unlocked.
  */
 export const TrialCountdownBanner: React.FC = () => {
@@ -42,10 +42,12 @@ export const TrialCountdownBanner: React.FC = () => {
 
   if (isTrialExpired || status.phase === 'expired') {
     return (
-      <div className="trial-banner trial-banner--locked" role="status">
-        <p className="trial-banner-title">Trial ended</p>
+      <div className="trial-banner trial-banner--free" role="status">
+        <p className="trial-banner-eyebrow">Free with ads</p>
+        <p className="trial-banner-title">You can still convert</p>
         <p className="trial-banner-body">
-          Convert stays available at 30s. Unlock 60s with Premium — ads remain until you subscribe.
+          Your trial ended, but Embrace HD stays free with ads. Longer videos split into 30-second
+          Status parts (e.g. 60s → 2 parts). Subscribe for 60-second Status and ad-free.
         </p>
       </div>
     );

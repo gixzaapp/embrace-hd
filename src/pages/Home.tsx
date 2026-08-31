@@ -81,6 +81,7 @@ const Home: React.FC = () => {
   const [convertActivePhase, setConvertActivePhase] =
     useState<ConvertPhase>('upload');
   const abortRef = useRef<AbortController | null>(null);
+  const convertDismissedEarlyRef = useRef(false);
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
   const contentRef = useRef<HTMLIonContentElement>(null);
   const convertAnchorRef = useRef<HTMLDivElement>(null);
@@ -152,7 +153,7 @@ const Home: React.FC = () => {
   const selectedUriRef = useRef<string | null>(null);
   selectedUriRef.current = selectedMedia?.uri ?? null;
 
-  // Library → Home (or restore working media when Home has no selection)
+  // Library → Home handoff within the same app session
   useIonViewWillEnter(() => {
     const working = getWorkingMedia();
     if (!working?.uri || working.kind === 'image') return;
@@ -195,6 +196,13 @@ const Home: React.FC = () => {
     abortRef.current?.abort();
   };
 
+  const onCloseConvertProgress = () => {
+    convertDismissedEarlyRef.current = true;
+    setConvertOpen(false);
+    resetHomeWorkspace();
+    setBusy(false);
+  };
+
   const onCancelQuality = () => {
     setQualityOpen(false);
   };
@@ -202,6 +210,14 @@ const Home: React.FC = () => {
   const resetConvertPhases = () => {
     setConvertPhases({ upload: 0, convert: 0, send: 0 });
     setConvertActivePhase('upload');
+  };
+
+  const resetHomeWorkspace = () => {
+    editWorkspaceRef.current?.pausePreview();
+    setSelectedMedia(null);
+    setVideoDurationSec(0);
+    clearWorkingMedia();
+    void clearEmbraceHdMediaCache();
   };
 
   const onCreateStatus = async () => {
@@ -312,9 +328,11 @@ const Home: React.FC = () => {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    convertDismissedEarlyRef.current = false;
     setBusy(true);
     resetConvertPhases();
     setConvertOpen(true);
+    let convertStarted = true;
 
     interstitialPromiseRef.current = shouldShowAds
       ? (async () => {
@@ -351,12 +369,10 @@ const Home: React.FC = () => {
       });
       setConvertPhases({ upload: 1, convert: 1, send: 1 });
       setConvertActivePhase('send');
-      setConvertOpen(false);
+      if (!convertDismissedEarlyRef.current) {
+        setConvertOpen(false);
+      }
 
-      setSelectedMedia(null);
-      setVideoDurationSec(0);
-      clearWorkingMedia();
-      void clearEmbraceHdMediaCache();
       void clearGalleryLibrary(exported.galleryItem?.id).catch((err) => {
         console.warn('[Home] clear Library gallery failed', err);
       });
@@ -367,33 +383,42 @@ const Home: React.FC = () => {
         // ignore ad failures
       }
 
-      if (exported.deliveredVia === 'whatsapp') {
-        setDeliveredOpen(true);
-        setToast({
-          open: true,
-          message: exported.editsDropped
-            ? 'Sent — check WhatsApp (server update needed for crop/trim/sound)'
-            : 'Sent — check your WhatsApp',
-        });
-      } else {
-        setToast({
-          open: true,
-          message: exported.editsDropped
-            ? `HD ready · ${exported.statusLengthSec}s (edits skipped — update server)`
-            : `HD ready · ${exported.statusLengthSec}s`,
-        });
+      if (!convertDismissedEarlyRef.current) {
+        if (exported.deliveredVia === 'whatsapp') {
+          setDeliveredOpen(true);
+          setToast({
+            open: true,
+            message: exported.editsDropped
+              ? 'Sent — check WhatsApp (server update needed for crop/trim/sound)'
+              : 'Sent — check your WhatsApp',
+          });
+        } else {
+          setToast({
+            open: true,
+            message: exported.editsDropped
+              ? `HD ready · ${exported.statusLengthSec}s (edits skipped — update server)`
+              : `HD ready · ${exported.statusLengthSec}s`,
+          });
+        }
       }
     } catch (err) {
-      setConvertOpen(false);
+      if (!convertDismissedEarlyRef.current) {
+        setConvertOpen(false);
+      }
       if (isAbortError(err)) {
-        setToast({ open: true, message: 'Convert cancelled' });
-      } else {
+        if (!convertDismissedEarlyRef.current) {
+          setToast({ open: true, message: 'Convert cancelled' });
+        }
+      } else if (!convertDismissedEarlyRef.current) {
         setToast({
           open: true,
           message: err instanceof Error ? err.message : 'Could not prepare video',
         });
       }
     } finally {
+      if (convertStarted && !convertDismissedEarlyRef.current) {
+        resetHomeWorkspace();
+      }
       abortRef.current = null;
       setBusy(false);
       setConvertOpen(false);
@@ -416,7 +441,8 @@ const Home: React.FC = () => {
 
           {isTrialExpired && !canUse60sStatus ? (
             <p className="home-lock-note" role="status">
-              Trial ended — convert with 30s Status. Subscribe to unlock 60s.
+              Free with ads — longer videos split into 30-second Status parts (e.g. 60s → 2 parts).
+              Premium unlocks 60-second Status and removes ads.
             </p>
           ) : null}
 
@@ -447,7 +473,7 @@ const Home: React.FC = () => {
               setToast({
                 open: true,
                 message:
-                  '60-second Status is locked after your trial. Convert with 30s, or subscribe in Settings to unlock 60s.',
+                  '60-second Status is Premium only. Free plan splits longer videos into 30-second parts — subscribe in Settings.',
               });
             }}
             disabled={controlsDisabled}
@@ -486,6 +512,7 @@ const Home: React.FC = () => {
           phases={convertPhases}
           activePhase={convertActivePhase}
           onCancel={onCancelConvert}
+          onClose={onCloseConvertProgress}
         />
 
         <WhatsAppDeliveredModal

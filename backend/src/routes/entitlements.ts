@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { HttpError } from '../middleware/errorHandler.js';
+import type { AuthedRequest } from '../middleware/requireAuth.js';
+import { optionalAuth } from '../middleware/optionalAuth.js';
 import { getAppConfig } from '../services/configStore.js';
 import { resolveEntitlementFlags } from '../services/entitlements.js';
 import { verifySubscription } from '../services/revenueCat.js';
@@ -14,7 +16,7 @@ const querySchema = z.object({
   appUserId: z.string().min(1).optional(),
 });
 
-entitlementsRouter.get('/', async (req, res, next) => {
+entitlementsRouter.get('/', optionalAuth, async (req, res, next) => {
   try {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
@@ -23,10 +25,11 @@ entitlementsRouter.get('/', async (req, res, next) => {
 
     const deviceId = parsed.data.deviceId;
     const appUserId = parsed.data.appUserId?.trim() || deviceId;
+    const userId = (req as AuthedRequest).authUser?.id;
 
     const config = await getAppConfig();
     const [trial, subscription] = await Promise.all([
-      claimTrial(deviceId),
+      claimTrial(deviceId, userId),
       verifySubscription(appUserId),
     ]);
 

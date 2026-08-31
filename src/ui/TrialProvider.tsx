@@ -10,7 +10,7 @@ import {
 import { resolveEntitlements, type EntitlementFlags } from '../core/entitlements';
 import { formatTrialCountdown, type TrialStatus } from '../core/trial';
 import type { SubscriptionStatus } from '../core/subscription';
-import { initializeTrialOnLaunch, trialManager } from '../services/trialManager';
+import { initializeTrialOnLaunch, syncTrialStartFromServer, trialManager } from '../services/trialManager';
 import { purchaseManager } from '../services/purchaseManager';
 import { adsManager } from '../services/adsManager';
 import { getOrCreateDeviceId } from '../services/deviceId';
@@ -18,6 +18,7 @@ import {
   fetchEntitlementsRemote,
   isBackendEnabled,
 } from '../services/backendEntitlements';
+import { useAuth } from './AuthProvider';
 
 type TrialContextValue = {
   status: TrialStatus | null;
@@ -59,6 +60,7 @@ const idleTrial: TrialStatus = {
 };
 
 export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { token } = useAuth();
   const [status, setStatus] = useState<TrialStatus | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [serverFlags, setServerFlags] = useState<EntitlementFlags | null>(null);
@@ -84,18 +86,26 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       ]);
 
       // Always keep local trial clock as offline fallback
+      const backendOn = isBackendEnabled();
       const [localTrial, localSub] = await Promise.all([
-        initializeTrialOnLaunch(),
+        initializeTrialOnLaunch({ deferStart: backendOn }),
         purchaseManager.checkSubscription().catch(() => null),
       ]);
 
       setStatus(localTrial);
       setSubscription(localSub);
 
-      if (isBackendEnabled()) {
+      if (backendOn) {
         try {
-          const remote = await fetchEntitlementsRemote(deviceId, deviceId);
+          const remote = await fetchEntitlementsRemote(
+            deviceId,
+            deviceId,
+            token ?? undefined
+          );
           setStatus(remote.trial);
+          if (remote.trial.startDateIso) {
+            await syncTrialStartFromServer(remote.trial.startDateIso);
+          }
           setSubscription({
             isPremium: remote.subscription.isPremium,
             entitlementId: remote.subscription.entitlementId,
@@ -122,7 +132,7 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     void refresh();
