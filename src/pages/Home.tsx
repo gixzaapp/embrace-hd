@@ -39,6 +39,7 @@ import {
   useAuth,
   useTrial,
   VideoTimelineThumbnails,
+  WhatsAppActivateModal,
   WhatsAppDeliveredModal,
   type ConvertPhaseProgress,
   type EditWorkspaceHandle,
@@ -87,6 +88,12 @@ const Home: React.FC = () => {
   const convertAnchorRef = useRef<HTMLDivElement>(null);
   const editWorkspaceRef = useRef<EditWorkspaceHandle | null>(null);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
+  const [activateBusy, setActivateBusy] = useState(false);
+  const [activateTarget, setActivateTarget] = useState<{
+    businessPhoneE164: string;
+    prefillMessage: string;
+  } | null>(null);
   const [toast, setToast] = useState<{ open: boolean; message: string }>({
     open: false,
     message: '',
@@ -207,6 +214,38 @@ const Home: React.FC = () => {
     setQualityOpen(false);
   };
 
+  const onDismissActivate = () => {
+    if (activateBusy) return;
+    setActivateOpen(false);
+    setActivateTarget(null);
+  };
+
+  const onActivateWhatsApp = async () => {
+    if (!activateTarget) return;
+    setActivateBusy(true);
+    try {
+      await openBusinessWhatsAppChat({
+        businessPhoneE164: activateTarget.businessPhoneE164,
+        text: activateTarget.prefillMessage,
+      });
+      setActivateOpen(false);
+      setActivateTarget(null);
+      setToast({
+        open: true,
+        message:
+          'Send the message in WhatsApp, wait a moment, then tap Convert again.',
+      });
+    } catch (err) {
+      setToast({
+        open: true,
+        message:
+          err instanceof Error ? err.message : 'Could not open WhatsApp',
+      });
+    } finally {
+      setActivateBusy(false);
+    }
+  };
+
   const resetConvertPhases = () => {
     setConvertPhases({ upload: 0, convert: 0, send: 0 });
     setConvertActivePhase('upload');
@@ -250,15 +289,11 @@ const Home: React.FC = () => {
             });
             return;
           }
-          await openBusinessWhatsAppChat({
+          setActivateTarget({
             businessPhoneE164: business,
-            text: windowStatus.prefillMessage,
+            prefillMessage: windowStatus.prefillMessage,
           });
-          setToast({
-            open: true,
-            message:
-              'Message the business WhatsApp number, wait a moment, then tap Convert again.',
-          });
+          setActivateOpen(true);
           return;
         }
       } catch (err) {
@@ -518,6 +553,13 @@ const Home: React.FC = () => {
         <WhatsAppDeliveredModal
           open={deliveredOpen}
           onDismiss={() => setDeliveredOpen(false)}
+        />
+
+        <WhatsAppActivateModal
+          open={activateOpen}
+          busy={activateBusy}
+          onActivate={() => void onActivateWhatsApp()}
+          onDismiss={onDismissActivate}
         />
 
         <IonToast

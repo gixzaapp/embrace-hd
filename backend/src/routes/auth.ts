@@ -30,10 +30,38 @@ const requestSchema = z.object({
   deviceId: z.string().min(1).max(120).optional(),
 });
 
+const lookupSchema = z.object({
+  phone: z.string().min(8).max(20),
+});
+
 const verifySchema = z.object({
   phone: z.string().min(8).max(20),
   code: z.string().min(4).max(8),
   deviceId: z.string().min(1).max(120).optional(),
+});
+
+/** Check whether a WhatsApp number already has an account (for unified Continue flow). */
+authRouter.post('/lookup-phone', async (req, res, next) => {
+  try {
+    const parsed = lookupSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Invalid body', parsed.error.flatten());
+    }
+
+    const phoneE164 = normalizePhoneE164(parsed.data.phone);
+    if (!phoneE164) {
+      throw new HttpError(400, 'Invalid phone number');
+    }
+
+    const existing = await findUserByPhone(phoneE164);
+    res.json({
+      ok: true,
+      phoneE164,
+      exists: Boolean(existing),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 authRouter.post('/request-otp', async (req, res, next) => {

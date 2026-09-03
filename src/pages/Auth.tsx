@@ -4,33 +4,40 @@ import {
   IonContent,
   IonInput,
   IonPage,
-  IonSegment,
-  IonSegmentButton,
-  IonLabel,
   IonSpinner,
   useIonRouter,
 } from '@ionic/react';
 import { ApiError } from '../services/apiClient';
 import { useAuth } from '../ui/AuthProvider';
+import { CountryCodePicker } from '../ui/CountryCodePicker';
+import { findCountryByCode, type Country } from '../core/countryCodes';
 import type { AuthMode } from '../services/authApi';
 import './Auth.css';
 
 type Step = 'form' | 'otp';
 
-function buildPhone(countryCode: string, national: string): string {
-  const cc = countryCode.replace(/[^\d]/g, '');
+function buildPhone(dial: string, national: string): string {
+  const cc = dial.replace(/[^\d]/g, '');
   const num = national.replace(/[^\d]/g, '');
   return `+${cc}${num}`;
 }
 
 const Auth: React.FC = () => {
-  const { requestOtp, verifyOtp, isAuthenticated, loading: authLoading } = useAuth();
+  const {
+    lookupPhone,
+    requestOtp,
+    verifyOtp,
+    isAuthenticated,
+    loading: authLoading,
+  } = useAuth();
   const router = useIonRouter();
 
-  const [mode, setMode] = useState<AuthMode>('login');
   const [step, setStep] = useState<Step>('form');
+  /** After lookup: null = not checked yet; true = need name to register */
+  const [needsName, setNeedsName] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('login');
   const [name, setName] = useState('');
-  const [countryCode, setCountryCode] = useState('234');
+  const [country, setCountry] = useState<Country>(() => findCountryByCode('NG'));
   const [national, setNational] = useState('');
   const [code, setCode] = useState('');
   const [phoneE164, setPhoneE164] = useState('');
@@ -52,43 +59,76 @@ const Auth: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [resendIn]);
 
-  const title = useMemo(
-    () =>
-      step === 'otp'
-        ? 'Enter WhatsApp code'
-        : mode === 'register'
-          ? 'Create account'
-          : 'Sign in',
-    [step, mode]
-  );
+  const title = useMemo(() => {
+    if (step === 'otp') return 'Enter WhatsApp code';
+    if (needsName) return 'Almost there';
+    return "Let's Start";
+  }, [step, needsName]);
 
-  const onRequestOtp = async () => {
+  const sendCode = async (authMode: AuthMode, phone: string) => {
+    const res = await requestOtp({
+      phone,
+      mode: authMode,
+      name: authMode === 'register' ? name.trim() : undefined,
+    });
+    setMode(authMode);
+    setPhoneE164(res.phoneE164);
+    setChannel(res.channel);
+    setOtpHint(res.otpHint ?? null);
+    setCode(res.otpHint ?? '');
+    setStep('otp');
+    setResendIn(30);
+  };
+
+  const onContinue = async () => {
     setError(null);
-    const phone = buildPhone(countryCode, national);
+    const phone = buildPhone(country.dial, national);
     if (national.replace(/\D/g, '').length < 7) {
       setError('Enter a valid phone number');
-      return;
-    }
-    if (mode === 'register' && !name.trim()) {
-      setError('Enter your name to register');
       return;
     }
 
     setBusy(true);
     try {
-      const res = await requestOtp({
-        phone,
-        mode,
-        name: mode === 'register' ? name.trim() : undefined,
-      });
-      setPhoneE164(res.phoneE164);
-      setChannel(res.channel);
-      setOtpHint(res.otpHint ?? null);
-      setCode(res.otpHint ?? '');
-      setStep('otp');
-      setResendIn(30);
+      // New user path: name already shown — register + send code
+      if (needsName) {
+        if (!name.trim()) {
+          setError('Enter your name to continue');
+          return;
+        }
+        await sendCode('register', phone);
+        return;
+      }
+
+      // First Continue: look up account
+      const lookup = await lookupPhone(phone);
+      setPhoneE164(lookup.phoneE164);
+
+      if (lookup.exists) {
+        // Existing user — send code, do not ask for name
+        await sendCode('login', lookup.phoneE164);
+        return;
+      }
+
+      // New number — ask for name next
+      setNeedsName(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not send OTP');
+      setError(
+        err instanceof ApiError ? err.message : 'Could not continue — try again'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onResend = async () => {
+    setError(null);
+    const phone = phoneE164 || buildPhone(country.dial, national);
+    setBusy(true);
+    try {
+      await sendCode(mode, phone);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send the code');
     } finally {
       setBusy(false);
     }
@@ -103,7 +143,7 @@ const Auth: React.FC = () => {
     setBusy(true);
     try {
       await verifyOtp({
-        phone: phoneE164 || buildPhone(countryCode, national),
+        phone: phoneE164 || buildPhone(country.dial, national),
         code: code.trim(),
       });
       router.push('/home', 'root', 'replace');
@@ -126,6 +166,8 @@ const Auth: React.FC = () => {
     );
   }
 
+  const primaryLabel = needsName ? 'Send code on WhatsApp' : 'Continue';
+
   return (
     <IonPage>
       <IonContent className="auth-content" fullscreen>
@@ -135,91 +177,108 @@ const Auth: React.FC = () => {
           <p className="auth-sub">
             {step === 'otp'
               ? `Enter the code WhatsApp sent to ${phoneE164}.`
-              : mode === 'register'
-                ? 'Create your account with your WhatsApp number.'
-                : 'Sign in with a one-time code sent on WhatsApp.'}
+              : needsName
+                ? 'Enter your name to create your account. We’ll send a code on WhatsApp.'
+                : 'No password needed. You’ll receive a login code on WhatsApp.'}
           </p>
 
           {step === 'form' ? (
             <>
-              <IonSegment
-                value={mode}
-                onIonChange={(e) => {
-                  setMode((e.detail.value as AuthMode) || 'login');
-                  setStep('form');
-                  setError(null);
-                }}
-                className="auth-segment"
-              >
-                <IonSegmentButton value="login">
-                  <IonLabel>Login</IonLabel>
-                </IonSegmentButton>
-                <IonSegmentButton value="register">
-                  <IonLabel>Register</IonLabel>
-                </IonSegmentButton>
-              </IonSegment>
-
-              {mode === 'register' ? (
-                <IonInput
-                  className="auth-input"
-                  label="Name"
-                  labelPlacement="stacked"
-                  fill="outline"
-                  value={name}
-                  onIonInput={(e) => setName(e.detail.value ?? '')}
-                  placeholder="Your name"
-                />
+              {needsName ? (
+                <div className="auth-field">
+                  <label className="auth-field-label" htmlFor="auth-name">
+                    Name
+                  </label>
+                  <IonInput
+                    id="auth-name"
+                    className="auth-input"
+                    fill="outline"
+                    value={name}
+                    onIonInput={(e) => setName(e.detail.value ?? '')}
+                    placeholder="Your name"
+                    disabled={busy}
+                  />
+                </div>
               ) : null}
 
               <div className="auth-phone-row">
-                <IonInput
-                  className="auth-input auth-input--cc"
-                  label="Code"
-                  labelPlacement="stacked"
-                  fill="outline"
-                  value={countryCode}
-                  onIonInput={(e) => setCountryCode(e.detail.value ?? '')}
-                  inputMode="numeric"
-                  placeholder="234"
+                <CountryCodePicker
+                  value={country}
+                  onChange={(next) => {
+                    setCountry(next);
+                    // Changing country/number resets lookup
+                    setNeedsName(false);
+                    setName('');
+                  }}
+                  disabled={busy || needsName}
                 />
-                <IonInput
-                  className="auth-input auth-input--phone"
-                  label="WhatsApp number"
-                  labelPlacement="stacked"
-                  fill="outline"
-                  value={national}
-                  onIonInput={(e) => setNational(e.detail.value ?? '')}
-                  inputMode="tel"
-                  placeholder="8012345678"
-                />
+                <div className="auth-field auth-field--phone">
+                  <label className="auth-field-label" htmlFor="auth-phone">
+                    WhatsApp number
+                  </label>
+                  <IonInput
+                    id="auth-phone"
+                    className="auth-input"
+                    fill="outline"
+                    value={national}
+                    onIonInput={(e) => {
+                      setNational(e.detail.value ?? '');
+                      setNeedsName(false);
+                      setName('');
+                    }}
+                    inputMode="tel"
+                    placeholder="8012345678"
+                    disabled={busy || needsName}
+                  />
+                </div>
               </div>
+
+              {needsName ? (
+                <IonButton
+                  fill="clear"
+                  size="small"
+                  className="auth-change-number"
+                  disabled={busy}
+                  onClick={() => {
+                    setNeedsName(false);
+                    setName('');
+                    setError(null);
+                  }}
+                >
+                  Change number
+                </IonButton>
+              ) : null}
 
               <IonButton
                 expand="block"
                 className="auth-primary"
                 disabled={busy}
-                onClick={() => void onRequestOtp()}
+                onClick={() => void onContinue()}
               >
-                {busy ? <IonSpinner name="crescent" /> : 'Send OTP on WhatsApp'}
+                {busy ? <IonSpinner name="crescent" /> : primaryLabel}
               </IonButton>
             </>
           ) : (
             <>
-              <IonInput
-                className="auth-input"
-                label="6-digit code"
-                labelPlacement="stacked"
-                fill="outline"
-                value={code}
-                onIonInput={(e) => setCode(e.detail.value ?? '')}
-                inputMode="numeric"
-                maxlength={6}
-                placeholder="••••••"
-              />
+              <div className="auth-field">
+                <label className="auth-field-label" htmlFor="auth-code">
+                  6-digit code
+                </label>
+                <IonInput
+                  id="auth-code"
+                  className="auth-input"
+                  fill="outline"
+                  value={code}
+                  onIonInput={(e) => setCode(e.detail.value ?? '')}
+                  inputMode="numeric"
+                  maxlength={6}
+                  placeholder="••••••"
+                />
+              </div>
 
               {otpHint && channel === 'mock' ? (
                 <p className="auth-hint" role="status">
-                  Dev mock OTP: <strong>{otpHint}</strong>
+                  Dev mock code: <strong>{otpHint}</strong>
                 </p>
               ) : null}
 
@@ -237,7 +296,7 @@ const Auth: React.FC = () => {
                   fill="clear"
                   size="small"
                   disabled={busy || resendIn > 0}
-                  onClick={() => void onRequestOtp()}
+                  onClick={() => void onResend()}
                 >
                   {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
                 </IonButton>
@@ -250,6 +309,8 @@ const Auth: React.FC = () => {
                     setCode('');
                     setOtpHint(null);
                     setError(null);
+                    setNeedsName(false);
+                    setName('');
                   }}
                 >
                   Change number
