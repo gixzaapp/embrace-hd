@@ -576,7 +576,13 @@ const postgresTrialsRepo = (): TrialsRepo => ({
     await query(
       `INSERT INTO trials (device_id, start_date_iso, claimed_at)
        VALUES ($1, $2, $3)
-       ON CONFLICT (device_id) DO NOTHING`,
+       ON CONFLICT (device_id) DO UPDATE SET
+         start_date_iso = LEAST(trials.start_date_iso, EXCLUDED.start_date_iso),
+         claimed_at = CASE
+           WHEN EXCLUDED.start_date_iso < trials.start_date_iso
+           THEN EXCLUDED.claimed_at
+           ELSE trials.claimed_at
+         END`,
       [record.deviceId, record.startDateIso, record.claimedAt]
     );
   },
@@ -612,7 +618,17 @@ const fileUserTrialsRepo = (): UserTrialsRepo => {
   const c = createFileCollection<UserTrialRecord>('user_trials.json');
   return {
     get: (userId) => c.get(userId),
-    put: (record) => c.put(record.userId, record),
+    async put(record) {
+      const existing = await c.get(record.userId);
+      if (
+        existing?.startDateIso &&
+        new Date(existing.startDateIso).getTime() <
+          new Date(record.startDateIso).getTime()
+      ) {
+        return;
+      }
+      await c.put(record.userId, record);
+    },
   };
 };
 
@@ -637,10 +653,17 @@ const postgresUserTrialsRepo = (): UserTrialsRepo => ({
       : null;
   },
   async put(record) {
+    // Prefer the earliest start date so a reinstall cannot reset an old trial.
     await query(
       `INSERT INTO user_trials (user_id, start_date_iso, claimed_at)
        VALUES ($1, $2, $3)
-       ON CONFLICT (user_id) DO NOTHING`,
+       ON CONFLICT (user_id) DO UPDATE SET
+         start_date_iso = LEAST(user_trials.start_date_iso, EXCLUDED.start_date_iso),
+         claimed_at = CASE
+           WHEN EXCLUDED.start_date_iso < user_trials.start_date_iso
+           THEN EXCLUDED.claimed_at
+           ELSE user_trials.claimed_at
+         END`,
       [record.userId, record.startDateIso, record.claimedAt]
     );
   },

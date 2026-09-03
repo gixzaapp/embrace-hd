@@ -20,6 +20,7 @@ import {
   deliverWhatsAppOtp,
   isWhatsAppCloudConfigured,
 } from '../services/whatsappOtp.js';
+import { claimTrial } from '../services/trialStore.js';
 
 export const authRouter = Router();
 
@@ -152,10 +153,18 @@ authRouter.post('/verify-otp', async (req, res, next) => {
     }
 
     const { record } = result;
+    const deviceId = parsed.data.deviceId ?? record.deviceId;
     const user = await ensureUser(phoneE164, {
       name: record.name,
-      deviceId: parsed.data.deviceId ?? record.deviceId,
+      deviceId,
     });
+
+    // Bind / repair trial to this account as soon as they sign in (survives reinstall).
+    if (deviceId?.trim()) {
+      await claimTrial(deviceId.trim(), user.id).catch((err) => {
+        console.warn('[auth] trial bind on verify failed', err);
+      });
+    }
 
     const session = await createSession(user.id);
 

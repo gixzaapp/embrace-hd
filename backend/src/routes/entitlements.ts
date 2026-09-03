@@ -6,7 +6,7 @@ import { optionalAuth } from '../middleware/optionalAuth.js';
 import { getAppConfig } from '../services/configStore.js';
 import { resolveEntitlementFlags } from '../services/entitlements.js';
 import { verifySubscription } from '../services/revenueCat.js';
-import { claimTrial } from '../services/trialStore.js';
+import { claimTrial, getTrialForDevice } from '../services/trialStore.js';
 import type { EntitlementsResponse } from '../types.js';
 
 export const entitlementsRouter = Router();
@@ -28,8 +28,10 @@ entitlementsRouter.get('/', optionalAuth, async (req, res, next) => {
     const userId = (req as AuthedRequest).authUser?.id;
 
     const config = await getAppConfig();
+    // Without a logged-in user, only READ device trial — never create a new 21-day claim
+    // (reinstall used to mint a fresh device trial before login and reset the counter).
     const [trial, subscription] = await Promise.all([
-      claimTrial(deviceId, userId),
+      userId ? claimTrial(deviceId, userId) : getTrialForDevice(deviceId),
       verifySubscription(appUserId),
     ]);
 

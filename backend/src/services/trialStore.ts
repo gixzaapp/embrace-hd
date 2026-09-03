@@ -12,6 +12,12 @@ function diffCalendarDays(from: Date, to: Date): number {
   return Math.floor(ms / (24 * 60 * 60 * 1000));
 }
 
+function earlierIso(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return new Date(a).getTime() <= new Date(b).getTime() ? a : b;
+}
+
 function buildClaimResult(
   startDateIso: string | null,
   durationDays: number
@@ -53,14 +59,25 @@ async function earliestDeviceTrialStart(
     if (!trimmed) continue;
     const record = await trialsRepo.get(trimmed);
     if (!record?.startDateIso) continue;
-    if (
-      !earliest ||
-      new Date(record.startDateIso).getTime() < new Date(earliest).getTime()
-    ) {
-      earliest = record.startDateIso;
-    }
+    earliest = earlierIso(earliest, record.startDateIso);
   }
   return earliest;
+}
+
+async function persistUserTrial(
+  userId: string,
+  startDateIso: string,
+  deviceId?: string
+): Promise<void> {
+  const claimedAt = new Date().toISOString();
+  await userTrialsRepo.put({ userId, startDateIso, claimedAt });
+  if (deviceId?.trim()) {
+    await trialsRepo.put({
+      deviceId: deviceId.trim(),
+      startDateIso,
+      claimedAt,
+    });
+  }
 }
 
 async function claimTrialForUser(
@@ -68,36 +85,30 @@ async function claimTrialForUser(
   deviceId: string,
   durationDays: number
 ): Promise<TrialClaimResult> {
-  const existingUserTrial = await userTrialsRepo.get(userId);
-  if (existingUserTrial?.startDateIso) {
-    return buildClaimResult(existingUserTrial.startDateIso, durationDays);
-  }
-
   const user = await getUserById(userId);
-  const deviceIds = new Set<string>([deviceId.trim()]);
+  const deviceIds = new Set<string>();
+  if (deviceId.trim()) deviceIds.add(deviceId.trim());
   for (const id of user?.deviceIds ?? []) {
     if (id.trim()) deviceIds.add(id.trim());
   }
 
-  const migratedStart = await earliestDeviceTrialStart(deviceIds);
-  if (migratedStart) {
-    const claimedAt = new Date().toISOString();
-    await userTrialsRepo.put({
-      userId,
-      startDateIso: migratedStart,
-      claimedAt,
-    });
-    return buildClaimResult(migratedStart, durationDays);
+  const fromDevices = await earliestDeviceTrialStart(deviceIds);
+  // Account age is a fallback when old device trials were lost on reinstall
+  const fromAccount = user?.createdAt ?? null;
+  const recoveredStart = earlierIso(fromDevices, fromAccount);
+
+  const existingUserTrial = await userTrialsRepo.get(userId);
+  const bestStart = earlierIso(existingUserTrial?.startDateIso, recoveredStart);
+
+  if (bestStart) {
+    // Always persist the earliest known start (repairs a wrongly-reset user_trials row)
+    await persistUserTrial(userId, bestStart, deviceId);
+    return buildClaimResult(bestStart, durationDays);
   }
 
+  // Genuinely new account — start trial now
   const startDateIso = new Date().toISOString();
-  const claimedAt = startDateIso;
-  await userTrialsRepo.put({ userId, startDateIso, claimedAt });
-  await trialsRepo.put({
-    deviceId: deviceId.trim(),
-    startDateIso,
-    claimedAt,
-  });
+  await persistUserTrial(userId, startDateIso, deviceId);
   return buildClaimResult(startDateIso, durationDays);
 }
 
@@ -124,7 +135,7 @@ async function claimTrialForDevice(
 /**
  * Idempotent trial claim.
  * Logged-in users are keyed by account (WhatsApp user id), not device — reinstall safe.
- * Anonymous / offline clients fall back to deviceId.
+ * Anonymous clients may fall back to deviceId (prefer read-only via getTrialForDevice).
  */
 export async function claimTrial(
   deviceId: string,
@@ -145,6 +156,7 @@ export async function claimTrial(
   return claimTrialForDevice(id, durationDays);
 }
 
+/** Read device trial without creating a new claim (safe before login / reinstall). */
 export async function getTrialForDevice(deviceId: string): Promise<TrialClaimResult> {
   const id = deviceId.trim();
   const config = await getAppConfig();

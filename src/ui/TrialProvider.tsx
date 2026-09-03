@@ -85,7 +85,8 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         adsManager.initialize(),
       ]);
 
-      // Always keep local trial clock as offline fallback
+      // Online + signed-in: server owns the trial (account-based).
+      // Before login / offline: do not mint a new local trial that looks like a reset.
       const backendOn = isBackendEnabled();
       const [localTrial, localSub] = await Promise.all([
         initializeTrialOnLaunch({ deferStart: backendOn }),
@@ -95,12 +96,12 @@ export const TrialProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setStatus(localTrial);
       setSubscription(localSub);
 
-      if (backendOn) {
+      if (backendOn && token) {
         try {
           const remote = await fetchEntitlementsRemote(
             deviceId,
             deviceId,
-            token ?? undefined
+            token
           );
           setStatus(remote.trial);
           if (remote.trial.startDateIso) {
