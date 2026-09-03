@@ -20,9 +20,11 @@ import { pauseOutline, playOutline } from 'ionicons/icons';
 import type { MediaSource } from '../core';
 import {
   formatTrimTime,
+  getSessionEditRecipe,
   hasCropInsets,
   mediaDisplaySrc,
   pickAudioFile,
+  probeAudioDurationSec,
   probeVideoDurationSec,
   type CropInsets,
   type EditRecipe,
@@ -61,10 +63,15 @@ type Props = {
   disabled?: boolean;
   onChangeSource?: () => void;
   onToast?: (message: string) => void;
+  /** Keeps Home Convert in sync when Edit lives on another tab. */
+  onRecipeChange?: (recipe: EditRecipe | null) => void;
 };
 
 export const EditWorkspace = forwardRef<EditWorkspaceHandle, Props>(
-  function EditWorkspace({ source, disabled, onChangeSource, onToast }, ref) {
+  function EditWorkspace(
+    { source, disabled, onChangeSource, onToast, onRecipeChange },
+    ref
+  ) {
     const previewVideoRef = useRef<HTMLVideoElement | null>(null);
     const musicPreviewRef = useRef<HTMLAudioElement | null>(null);
 
@@ -76,7 +83,7 @@ export const EditWorkspace = forwardRef<EditWorkspaceHandle, Props>(
     });
     const trimRangeRef = useRef(trimRange);
     trimRangeRef.current = trimRange;
-    const [openAccordion, setOpenAccordion] = useState<string | undefined>('crop');
+    const [openAccordion, setOpenAccordion] = useState<string | undefined>(undefined);
     const [soundMode, setSoundMode] = useState<SoundMode>('keep');
     const [customMusic, setCustomMusic] = useState<{
       uri: string;
@@ -243,22 +250,102 @@ export const EditWorkspace = forwardRef<EditWorkspaceHandle, Props>(
       setPreviewPlaying(true);
     }, [videoSrc]);
 
-    // Reset controls when the source video changes
+    // Reset / restore controls when the source video changes (or Edit remounts).
     useEffect(() => {
       stopMusicPreview();
-      setInsets(DEFAULT_INSETS);
-      setCustomMusic(null);
-      setMusicOffsetSec(0);
-      setSoundMode('keep');
-      setOpenAccordion('crop');
-      setDurationSec(0);
-      setTrimRange({ lower: 0, upper: 30 });
+      setOpenAccordion(undefined);
       if (!source.uri) return;
-      void probeVideoDurationSec(source.uri).then((sec) => {
+
+      const saved = getSessionEditRecipe();
+      let cancelled = false;
+
+      // Restore session edits immediately so remounting Edit does not wipe them
+      // via onRecipeChange syncing empty defaults.
+      if (saved) {
+        setInsets(
+          saved.crop
+            ? {
+                top: saved.crop.top ?? 0,
+                bottom: saved.crop.bottom ?? 0,
+                left: saved.crop.left ?? 0,
+                right: saved.crop.right ?? 0,
+              }
+            : DEFAULT_INSETS
+        );
+        setSoundMode(saved.soundMode);
+        setMusicOffsetSec(saved.musicOffsetSec ?? 0);
+        if (saved.trim) {
+          setTrimRange({
+            lower: Math.max(0, saved.trim.startSec),
+            upper: Math.max(saved.trim.startSec + 0.5, saved.trim.endSec),
+          });
+        }
+        if (saved.soundMode === 'file' && saved.musicUri) {
+          setCustomMusic({
+            uri: saved.musicUri,
+            name: saved.musicName ?? 'Music',
+            durationSec: Math.max(
+              0.5,
+              saved.musicDurationSec ??
+                (saved.musicOffsetSec ?? 0) + 30
+            ),
+          });
+        } else {
+          setCustomMusic(null);
+        }
+      } else {
+        setInsets(DEFAULT_INSETS);
+        setCustomMusic(null);
+        setMusicOffsetSec(0);
+        setSoundMode('keep');
+        setTrimRange({ lower: 0, upper: 30 });
+      }
+
+      void (async () => {
+        let sec = 0;
+        try {
+          sec = await probeVideoDurationSec(source.uri);
+        } catch {
+          // ignore
+        }
+        if (cancelled) return;
         const d = Math.max(1, sec || 30);
         setDurationSec(d);
-        setTrimRange({ lower: 0, upper: Math.min(d, Math.max(1, d)) });
-      });
+
+        const recipe = getSessionEditRecipe();
+        if (recipe?.trim) {
+          setTrimRange({
+            lower: Math.max(0, recipe.trim.startSec),
+            upper: Math.min(
+              d,
+              Math.max(recipe.trim.startSec + 0.5, recipe.trim.endSec)
+            ),
+          });
+        } else {
+          setTrimRange({ lower: 0, upper: Math.min(d, Math.max(1, d)) });
+        }
+
+        if (recipe?.soundMode === 'file' && recipe.musicUri) {
+          let musicDur = recipe.musicDurationSec ?? 0;
+          if (musicDur <= 0) {
+            try {
+              musicDur = await probeAudioDurationSec(recipe.musicUri);
+            } catch {
+              musicDur = Math.max(0.5, (recipe.musicOffsetSec ?? 0) + 30);
+            }
+          }
+          if (cancelled) return;
+          setCustomMusic({
+            uri: recipe.musicUri,
+            name: recipe.musicName ?? 'Music',
+            durationSec: Math.max(0.5, musicDur),
+          });
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
     }, [source.uri, stopMusicPreview]);
 
     useEffect(() => {
@@ -472,6 +559,8 @@ export const EditWorkspace = forwardRef<EditWorkspaceHandle, Props>(
         musicOffsetSec: soundMode === 'file' ? musicOffsetSec : undefined,
         musicUri: soundMode === 'file' ? customMusic?.uri : undefined,
         musicName: soundMode === 'file' ? customMusic?.name : undefined,
+        musicDurationSec:
+          soundMode === 'file' ? customMusic?.durationSec : undefined,
       };
     };
 
@@ -498,6 +587,20 @@ export const EditWorkspace = forwardRef<EditWorkspaceHandle, Props>(
         stopMusicPreview,
       ]
     );
+
+    useEffect(() => {
+      onRecipeChange?.(buildEditRecipe());
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- sync whenever recipe inputs change
+    }, [
+      onRecipeChange,
+      source.uri,
+      soundMode,
+      customMusic,
+      trimRange,
+      durationSec,
+      insets,
+      musicOffsetSec,
+    ]);
 
     return (
       <div className="crop-workspace glass-card">
@@ -562,9 +665,12 @@ export const EditWorkspace = forwardRef<EditWorkspaceHandle, Props>(
           onIonChange={(e) => {
             const v = e.detail.value;
             const next =
-              typeof v === 'string' ? v : Array.isArray(v) ? v[0] : undefined;
-            if (!next) return;
-            setOpenAccordion(next);
+              typeof v === 'string'
+                ? v
+                : Array.isArray(v)
+                  ? (v[0] as string | undefined)
+                  : undefined;
+            setOpenAccordion(next || undefined);
           }}
           className="crop-accordions"
         >

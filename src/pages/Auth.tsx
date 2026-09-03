@@ -172,7 +172,7 @@ const Auth: React.FC = () => {
     <IonPage>
       <IonContent className="auth-content" fullscreen>
         <div className="auth-body">
-          <p className="auth-eyebrow">Embrace HD</p>
+          <p className="auth-eyebrow">HD Status</p>
           <h1 className="auth-title">{title}</h1>
           <p className="auth-sub">
             {step === 'otp'

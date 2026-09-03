@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { IonApp, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { clearEmbraceHdMediaCache, resetWorkingMediaForAppLaunch } from './services';
-import { AppTabs, AppUpdateSnackbar, AuthProvider, BackButtonExit, TrialProvider } from './ui';
+import { AppTabs, AppUpdateSnackbar, AuthProvider, BackButtonExit, MediaSessionProvider, TrialProvider } from './ui';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -42,11 +42,13 @@ const App: React.FC = () => {
     <IonApp>
       <AuthProvider>
         <TrialProvider>
-          <IonReactRouter>
-            <AppTabs />
-            <BackButtonExit />
-          </IonReactRouter>
-          <AppUpdateSnackbar />
+          <MediaSessionProvider>
+            <IonReactRouter>
+              <AppTabs />
+              <BackButtonExit />
+            </IonReactRouter>
+            <AppUpdateSnackbar />
+          </MediaSessionProvider>
         </TrialProvider>
       </AuthProvider>
     </IonApp>

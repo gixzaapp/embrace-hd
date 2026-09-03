@@ -1,5 +1,6 @@
 export { TrialProvider, useTrial } from './TrialProvider';
 export { AuthProvider, useAuth } from './AuthProvider';
+export { MediaSessionProvider, useMediaSession } from './MediaSessionProvider';
 export { TrialCountdownBanner } from './TrialCountdownBanner';
 export { SubscriptionPlans } from './SubscriptionPlans';
 export { BottomBannerAd } from './BottomBannerAd';

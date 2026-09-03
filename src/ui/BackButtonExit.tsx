@@ -28,7 +28,7 @@ function goHome(history: ReturnType<typeof useHistory>): void {
 
 /**
  * Android back — Capacitor-owned (Ionic hardwareBackButton is disabled in App.tsx):
- * - /settings | /gallery (Library) → /home
+ * - /settings | /edit | /gallery (Library) → /home
  * - /home | /auth → exit
  */
 export const BackButtonExit: React.FC = () => {

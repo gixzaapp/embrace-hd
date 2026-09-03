@@ -106,8 +106,8 @@ export const ConvertProgressModal: React.FC<ConvertProgressModalProps> = ({
         {uploadComplete ? (
           <p className="convert-progress-dismiss-hint">
             HD conversion can take a while. You can wait here or close this dialog — we
-            will keep converting on our servers and send the finished video to your registered
-            WhatsApp number.
+            will keep converting in the background and send the finished video to your
+            registered WhatsApp number.
           </p>
         ) : null}
 

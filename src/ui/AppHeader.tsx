@@ -4,7 +4,7 @@ type AppHeaderProps = {
   title?: string;
 };
 
-export const AppHeader: React.FC<AppHeaderProps> = ({ title = 'EmbraceHD' }) => (
+export const AppHeader: React.FC<AppHeaderProps> = ({ title = 'HD Status' }) => (
   <header className="app-header">
     <div className="app-header-brand">
       <span className="material-symbols-outlined app-header-hd" aria-hidden>

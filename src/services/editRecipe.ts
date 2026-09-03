@@ -15,6 +15,8 @@ export type EditRecipe = {
   /** Local audio URI when soundMode === 'file' (uploaded separately; not always persisted long-term). */
   musicUri?: string;
   musicName?: string;
+  /** Used to restore the Sound UI after leaving the Edit tab. */
+  musicDurationSec?: number;
 };
 
 /** JSON-safe recipe for FormData / gateway (no local music URI). */
@@ -65,4 +67,19 @@ export function isNoOpEditRecipe(
     if (sourceDurationSec != null && end < sourceDurationSec - 0.1) return false;
   }
   return true;
+}
+
+/** In-session Edit recipe (survives Home ↔ Edit tab switches). */
+let sessionEditRecipe: EditRecipe | null = null;
+
+export function setSessionEditRecipe(recipe: EditRecipe | null): void {
+  sessionEditRecipe = recipe;
+}
+
+export function getSessionEditRecipe(): EditRecipe | null {
+  return sessionEditRecipe;
+}
+
+export function clearSessionEditRecipe(): void {
+  sessionEditRecipe = null;
 }

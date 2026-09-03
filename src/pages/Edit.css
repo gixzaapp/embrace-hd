@@ -1,0 +1,64 @@
+.edit-content {
+  --background: var(--eh-background, #0b1326);
+}
+
+.edit-content--with-ads {
+  --padding-bottom: calc(
+    var(--eh-tab-bar-height) + var(--eh-ad-height) + env(safe-area-inset-bottom, 0px) +
+      16px
+  );
+}
+
+.edit-body {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 8px var(--eh-pad, 16px) 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.edit-heading {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #f8fafc;
+}
+
+.edit-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.35);
+  text-align: center;
+}
+
+.edit-empty-icon {
+  font-size: 40px !important;
+  color: #14b8a6;
+}
+
+.edit-empty-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.edit-empty-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #94a3b8;
+  max-width: 280px;
+}
+
+.edit-save-wrap {
+  margin-top: 8px;
+  padding-bottom: 8px;
+}

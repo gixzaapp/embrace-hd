@@ -11,7 +11,7 @@ export type HdPresetKey = keyof typeof HD_PRESETS;
 export type HdPresetChoice = HdPresetKey | 'auto';
 
 export const APP = {
-  name: 'Embrace HD',
+  name: 'HD Status EmbraceHD',
   tagline: 'HD Video Generator — WhatsApp Ready',
   id: 'uk.co.embraceapp.app',
 } as const;

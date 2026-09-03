@@ -8,13 +8,15 @@ import {
   IonTabButton,
   IonTabs,
 } from '@ionic/react';
-import { homeOutline, imagesOutline, settingsOutline } from 'ionicons/icons';
+import { createOutline, homeOutline, imagesOutline, settingsOutline } from 'ionicons/icons';
 import Auth from '../pages/Auth';
 import Home from '../pages/Home';
+import Edit from '../pages/Edit';
 import Gallery from '../pages/Gallery';
 import Settings from '../pages/Settings';
 import { BottomBannerAd } from './BottomBannerAd';
 import { useAuth } from './AuthProvider';
+import { useMediaSession } from './MediaSessionProvider';
 import { useTrial } from './TrialProvider';
 
 /** Set true to show Library tab again (saved converts / share). */
@@ -27,6 +29,7 @@ const SHOW_LIBRARY_TAB = false;
 export const AppTabs: React.FC = () => {
   const { shouldShowAds } = useTrial();
   const { isAuthenticated, loading } = useAuth();
+  const { hasEditableVideo } = useMediaSession();
 
   if (loading) {
     return (
@@ -56,6 +59,9 @@ export const AppTabs: React.FC = () => {
           <Route exact path="/home">
             <Home />
           </Route>
+          <Route exact path="/edit">
+            <Edit />
+          </Route>
           {/* Page kept for a future Library tab / deep link */}
           <Route exact path="/gallery">
             {SHOW_LIBRARY_TAB ? <Gallery /> : <Redirect to="/home" />}
@@ -79,6 +85,15 @@ export const AppTabs: React.FC = () => {
           <IonTabButton tab="home" href="/home" className="app-tab-button">
             <IonIcon icon={homeOutline} />
             <IonLabel>Home</IonLabel>
+          </IonTabButton>
+          <IonTabButton
+            tab="edit"
+            href="/edit"
+            className="app-tab-button"
+            disabled={!hasEditableVideo}
+          >
+            <IonIcon icon={createOutline} />
+            <IonLabel>Edit</IonLabel>
           </IonTabButton>
           {SHOW_LIBRARY_TAB ? (
             <IonTabButton tab="gallery" href="/gallery" className="app-tab-button">

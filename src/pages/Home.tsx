@@ -4,22 +4,20 @@ import {
   IonPage,
   IonToast,
   useIonViewWillEnter,
-  useIonViewWillLeave,
 } from '@ionic/react';
 import { type MediaSource, type StatusLengthSec } from '../core';
 import {
   adsManager,
   clearEmbraceHdMediaCache,
   clearGalleryLibrary,
-  clearWorkingMedia,
   fetchConversationWindow,
   getClientBusinessWhatsAppE164,
+  getSessionEditRecipe,
   getWorkingMedia,
   hasMeaningfulEditRecipe,
   isBackendEnabled,
   openBusinessWhatsAppChat,
   pickStatusMedia,
-  setWorkingMedia,
   videoGeneratorService,
   type ConvertPhase,
   type EncodeQualityChoice,
@@ -31,18 +29,17 @@ import {
   AppHeader,
   ConvertButton,
   ConvertProgressModal,
-  EditWorkspace,
   QualityDecisionModal,
   StatusLengthPicker,
   TrialProgressBar,
   UploadDropZone,
   useAuth,
+  useMediaSession,
   useTrial,
   VideoTimelineThumbnails,
   WhatsAppActivateModal,
   WhatsAppDeliveredModal,
   type ConvertPhaseProgress,
-  type EditWorkspaceHandle,
 } from '../ui';
 import './Home.css';
 
@@ -62,13 +59,18 @@ const Home: React.FC = () => {
     loading: trialLoading,
   } = useTrial();
   const { token, isAuthenticated } = useAuth();
+  const {
+    selectedMedia,
+    videoDurationSec,
+    setSelectedMedia,
+    clearSelectedMedia,
+  } = useMediaSession();
 
   const [statusLengthSec, setStatusLengthSec] = useState<StatusLengthSec>(
     getPreferredStatusLength
   );
-  const [selectedMedia, setSelectedMedia] = useState<MediaSource | null>(null);
-  const [videoDurationSec, setVideoDurationSec] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [pickingMedia, setPickingMedia] = useState(false);
   const [qualityOpen, setQualityOpen] = useState(false);
   const [encodeQuality, setEncodeQuality] = useState<EncodeQualityChoice>(
     DEFAULT_ENCODE_QUALITY
@@ -86,7 +88,6 @@ const Home: React.FC = () => {
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
   const contentRef = useRef<HTMLIonContentElement>(null);
   const convertAnchorRef = useRef<HTMLDivElement>(null);
-  const editWorkspaceRef = useRef<EditWorkspaceHandle | null>(null);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
   const [activateBusy, setActivateBusy] = useState(false);
@@ -110,20 +111,31 @@ const Home: React.FC = () => {
         const content = contentRef.current;
         const anchor = convertAnchorRef.current;
         if (!content || !anchor) return;
+
         try {
           const scrollEl = await content.getScrollElement();
-          const contentRect = scrollEl.getBoundingClientRect();
-          const anchorRect = anchor.getBoundingClientRect();
-          const nextTop =
-            scrollEl.scrollTop +
-            (anchorRect.bottom - contentRect.bottom) +
-            24;
-          await content.scrollToPoint(0, Math.max(0, nextTop), 450);
+          const adFooter = document.getElementById('app-ad-footer');
+          const tabBar = document.getElementById('app-tab-bar');
+
+          let visibleBottom = window.innerHeight;
+          if (adFooter) {
+            const top = adFooter.getBoundingClientRect().top;
+            if (top > 0) visibleBottom = Math.min(visibleBottom, top);
+          } else if (tabBar) {
+            const top = tabBar.getBoundingClientRect().top;
+            if (top > 0) visibleBottom = Math.min(visibleBottom, top);
+          }
+
+          const overflow =
+            anchor.getBoundingClientRect().bottom + 16 - visibleBottom;
+          if (overflow <= 0) return;
+
+          scrollEl.scrollBy({ top: overflow, behavior: 'smooth' });
         } catch {
-          anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          anchor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       })();
-    }, 180);
+    }, 220);
   };
 
   useEffect(() => {
@@ -132,8 +144,6 @@ const Home: React.FC = () => {
   }, [selectedMedia?.uri, videoDurationSec]);
 
   const applyMedia = (media: MediaSource, toastMessage?: string) => {
-    setSelectedMedia(media);
-    setWorkingMedia(media);
     void (async () => {
       let durationSec = 0;
       if (media.kind !== 'image' && media.uri) {
@@ -143,14 +153,14 @@ const Home: React.FC = () => {
           // ignore probe failures
         }
       }
-      setVideoDurationSec(durationSec);
+      setSelectedMedia(media, durationSec);
       if (toastMessage) {
         setToast({ open: true, message: toastMessage });
       } else {
         setToast({
           open: true,
           message: durationSec
-            ? `Selected · ${Math.round(durationSec)}s video`
+            ? `Selected · ${Math.round(durationSec)}s · open Edit to crop, trim, or sound`
             : `Selected: ${media.name ?? media.kind ?? 'media'}`,
         });
       }
@@ -163,16 +173,17 @@ const Home: React.FC = () => {
   // Library → Home handoff within the same app session
   useIonViewWillEnter(() => {
     const working = getWorkingMedia();
-    if (!working?.uri || working.kind === 'image') return;
-    if (selectedUriRef.current === working.uri) return;
-    applyMedia(
-      working,
-      `Ready · tap Convert${working.name ? ` · ${working.name}` : ''}`
-    );
-  });
-
-  useIonViewWillLeave(() => {
-    editWorkspaceRef.current?.pausePreview();
+    if (working?.uri && working.kind !== 'image' && selectedUriRef.current !== working.uri) {
+      applyMedia(
+        working,
+        `Ready · tap Convert${working.name ? ` · ${working.name}` : ''}`
+      );
+      return;
+    }
+    // Returning from Edit (or re-entering) with a video — reveal Convert above ads.
+    if (selectedUriRef.current) {
+      scrollConvertIntoView();
+    }
   });
 
   useEffect(() => {
@@ -182,10 +193,10 @@ const Home: React.FC = () => {
     setPreferredStatusLength(30);
   }, [canUse60sStatus, statusLengthSec]);
 
-  const controlsDisabled = busy || trialLoading;
+  const controlsDisabled = busy || pickingMedia || trialLoading;
 
   const onPickMedia = async () => {
-    setBusy(true);
+    setPickingMedia(true);
     try {
       const media = await pickStatusMedia();
       applyMedia(media);
@@ -195,7 +206,7 @@ const Home: React.FC = () => {
         setToast({ open: true, message });
       }
     } finally {
-      setBusy(false);
+      setPickingMedia(false);
     }
   };
 
@@ -252,10 +263,7 @@ const Home: React.FC = () => {
   };
 
   const resetHomeWorkspace = () => {
-    editWorkspaceRef.current?.pausePreview();
-    setSelectedMedia(null);
-    setVideoDurationSec(0);
-    clearWorkingMedia();
+    clearSelectedMedia();
     void clearEmbraceHdMediaCache();
   };
 
@@ -309,17 +317,11 @@ const Home: React.FC = () => {
     }
 
     const recipePreview =
-      selectedMedia.kind !== 'image'
-        ? editWorkspaceRef.current?.getRecipe()
-        : undefined;
-    if (
-      selectedMedia.kind !== 'image' &&
-      editWorkspaceRef.current &&
-      recipePreview === null
-    ) {
+      selectedMedia.kind !== 'image' ? getSessionEditRecipe() : undefined;
+    if (selectedMedia.kind !== 'image' && recipePreview === null) {
       setToast({
         open: true,
-        message: 'Pick a music file in Sound, or turn Mute off',
+        message: 'Pick a music file in Sound on the Edit tab, or turn Mute off',
       });
       return;
     }
@@ -341,12 +343,12 @@ const Home: React.FC = () => {
     setEncodeQuality(quality);
     setQualityOpen(false);
 
-    editWorkspaceRef.current?.pausePreview();
-    const recipeRaw = editWorkspaceRef.current?.getRecipe();
-    if (editWorkspaceRef.current && recipeRaw === null) {
+    const recipeRaw =
+      selectedMedia.kind !== 'image' ? getSessionEditRecipe() : undefined;
+    if (selectedMedia.kind !== 'image' && recipeRaw === null) {
       setToast({
         open: true,
-        message: 'Pick a music file in Sound, or turn Mute off',
+        message: 'Pick a music file in Sound on the Edit tab, or turn Mute off',
       });
       return;
     }
@@ -486,16 +488,6 @@ const Home: React.FC = () => {
             disabled={controlsDisabled}
             onClick={onPickMedia}
           />
-
-          {selectedMedia?.uri && selectedMedia.kind !== 'image' ? (
-            <EditWorkspace
-              ref={editWorkspaceRef}
-              source={selectedMedia}
-              disabled={controlsDisabled}
-              onChangeSource={() => void onPickMedia()}
-              onToast={(message) => setToast({ open: true, message })}
-            />
-          ) : null}
 
           <StatusLengthPicker
             value={statusLengthSec}
