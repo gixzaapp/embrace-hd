@@ -117,7 +117,9 @@ function looksLikeLegacyExportRejection(err: unknown): boolean {
  *
  * Backward compatible:
  * - Omits editRecipe when the server does not advertise support (or recipe is no-op).
- * - Meaningful edits always use direct multipart (so an old gateway cannot drop them).
+ * - Custom music file still uses direct multipart (gateway cannot carry audio).
+ * - Mute/crop/trim go through the gateway via editRecipe.
+ * - Large videos use R2 multipart (chunked) to stay under CF ~100 MB body limit.
  * - If an older server rejects music/editRecipe fields, retries without edits.
  */
 export async function exportViaBackend(
@@ -167,8 +169,8 @@ export async function exportViaBackend(
   const gateway = getUploadGatewayUrl();
   const needsMusicFile =
     activeRecipe?.soundMode === 'file' && !!activeRecipe.musicUri;
-  // Meaningful edits → direct multipart so older gateways cannot strip the recipe.
-  const preferGateway = Boolean(gateway) && !needsMusicFile && !activeRecipe;
+  // Only custom music needs direct multipart; mute/crop/trim use the gateway.
+  const preferGateway = Boolean(gateway) && !needsMusicFile;
 
   const runUpload = (recipe: EditRecipe | undefined) => {
     const req: BackendExportRequest = { ...request, editRecipe: recipe };
@@ -228,7 +230,70 @@ export async function exportViaBackend(
   };
 }
 
+/** Stay under CF Free/Pro ~100 MB request body; R2 parts must be ≥ 5 MiB except last. */
+const GATEWAY_CHUNK_THRESHOLD_BYTES = 80 * 1024 * 1024;
+const GATEWAY_PART_SIZE_BYTES = 16 * 1024 * 1024;
+
 async function uploadViaGateway(
+  gatewayBase: string,
+  blob: Blob,
+  request: BackendExportRequest
+): Promise<{ jobId?: string }> {
+  if (blob.size > GATEWAY_CHUNK_THRESHOLD_BYTES) {
+    return uploadViaGatewayChunked(gatewayBase, blob, request);
+  }
+  return uploadViaGatewaySingle(gatewayBase, blob, request);
+}
+
+function gatewayAuthHeaders(
+  request: BackendExportRequest,
+  extra?: Record<string, string>
+): HeadersInit {
+  return {
+    Authorization: `Bearer ${request.authToken}`,
+    'X-Embrace-Preset': request.preset,
+    'X-Embrace-Status-Length': String(request.statusLengthSec),
+    'X-Embrace-Delivery': request.delivery ?? 'status',
+    ...extra,
+  };
+}
+
+function recipeWireForGateway(request: BackendExportRequest) {
+  return request.editRecipe && hasMeaningfulEditRecipe(request.editRecipe)
+    ? toEditRecipeWire(request.editRecipe)
+    : undefined;
+}
+
+async function readGatewayError(res: Response, fallback: string): Promise<string> {
+  let message = fallback;
+  try {
+    const text = await res.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text) as { error?: string };
+        message = data.error || text.slice(0, 200);
+      } catch {
+        message = text.slice(0, 200);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return message;
+}
+
+function mapGatewayNetworkError(err: unknown): never {
+  if (err instanceof DOMException && err.name === 'AbortError') throw err;
+  const detail = err instanceof Error ? err.message : 'Upload failed';
+  throw new ApiError(
+    /failed to fetch|networkerror|load failed/i.test(detail)
+      ? 'Upload failed — check network, or redeploy the upload gateway'
+      : detail,
+    0
+  );
+}
+
+async function uploadViaGatewaySingle(
   gatewayBase: string,
   blob: Blob,
   request: BackendExportRequest
@@ -244,11 +309,7 @@ async function uploadViaGateway(
   let res: Response;
   try {
     const x264 = request.x264Preset ?? 'veryfast';
-    const recipeWire =
-      request.editRecipe && hasMeaningfulEditRecipe(request.editRecipe)
-        ? toEditRecipeWire(request.editRecipe)
-        : undefined;
-    // Quality + editRecipe via query — avoids CORS Allow-Headers churn.
+    const recipeWire = recipeWireForGateway(request);
     const params = new URLSearchParams({ x264Preset: x264 });
     if (recipeWire) {
       params.set('editRecipe', JSON.stringify(recipeWire));
@@ -258,47 +319,206 @@ async function uploadViaGateway(
       method: 'PUT',
       body: blob,
       signal: request.signal,
-      headers: {
-        Authorization: `Bearer ${request.authToken}`,
+      headers: gatewayAuthHeaders(request, {
         'Content-Type': request.mimeType || 'video/mp4',
-        'X-Embrace-Preset': request.preset,
-        'X-Embrace-Status-Length': String(request.statusLengthSec),
-        'X-Embrace-Delivery': request.delivery ?? 'status',
-      },
+      }),
     });
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err;
-    const detail = err instanceof Error ? err.message : 'Upload failed';
-    throw new ApiError(
-      /failed to fetch|networkerror|load failed/i.test(detail)
-        ? 'Upload failed — check network, or redeploy the upload gateway'
-        : detail,
-      0
-    );
+    mapGatewayNetworkError(err);
   } finally {
     window.clearInterval(pulse);
   }
 
   if (!res.ok) {
-    let message = `Upload failed (${res.status})`;
-    try {
-      const text = await res.text();
-      if (text) {
-        try {
-          const data = JSON.parse(text) as { error?: string };
-          message = data.error || text.slice(0, 200);
-        } catch {
-          message = text.slice(0, 200);
-        }
-      }
-    } catch {
-      // ignore
-    }
-    throw new ApiError(message, res.status);
+    throw new ApiError(
+      await readGatewayError(res, `Upload failed (${res.status})`),
+      res.status
+    );
   }
 
   return (await res.json()) as { jobId?: string; fileName?: string };
 }
+
+async function uploadViaGatewayChunked(
+  gatewayBase: string,
+  blob: Blob,
+  request: BackendExportRequest
+): Promise<{ jobId?: string }> {
+  report(request, 'upload', 0.22);
+
+  let fileName = '';
+  let uploadId = '';
+
+  const abortMultipart = async () => {
+    if (!fileName || !uploadId) return;
+    try {
+      await fetch(`${gatewayBase}/upload/abort`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${request.authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fileName, uploadId }),
+      });
+    } catch {
+      // best-effort
+    }
+  };
+
+  try {
+    const initRes = await fetch(`${gatewayBase}/upload/init`, {
+      method: 'POST',
+      signal: request.signal,
+      headers: {
+        Authorization: `Bearer ${request.authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ mimeType: request.mimeType || 'video/mp4' }),
+    });
+    if (!initRes.ok) {
+      throw new ApiError(
+        await readGatewayError(initRes, `Upload init failed (${initRes.status})`),
+        initRes.status
+      );
+    }
+    const init = (await initRes.json()) as {
+      fileName?: string;
+      uploadId?: string;
+    };
+    if (!init.fileName || !init.uploadId) {
+      throw new ApiError('Upload gateway did not return multipart ids', 502);
+    }
+    fileName = init.fileName;
+    uploadId = init.uploadId;
+
+    const partSize = GATEWAY_PART_SIZE_BYTES;
+    const totalParts = Math.max(1, Math.ceil(blob.size / partSize));
+    const uploadedParts: { partNumber: number; etag: string }[] = [];
+    let uploadedBytes = 0;
+
+    for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+      if (request.signal?.aborted) {
+        throw new DOMException('Export cancelled', 'AbortError');
+      }
+      const start = (partNumber - 1) * partSize;
+      const end = Math.min(blob.size, start + partSize);
+      const chunk = blob.slice(start, end);
+
+      const part = await uploadGatewayPartWithRetry({
+        gatewayBase,
+        fileName,
+        uploadId,
+        partNumber,
+        chunk,
+        request,
+      });
+      uploadedParts.push(part);
+      uploadedBytes = end;
+      const ratio = blob.size > 0 ? uploadedBytes / blob.size : 1;
+      report(request, 'upload', 0.25 + ratio * 0.65);
+    }
+
+    const completeRes = await fetch(`${gatewayBase}/upload/complete`, {
+      method: 'POST',
+      signal: request.signal,
+      headers: {
+        Authorization: `Bearer ${request.authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileName,
+        uploadId,
+        parts: uploadedParts,
+        preset: request.preset,
+        statusLengthSec: request.statusLengthSec,
+        delivery: request.delivery ?? 'status',
+        x264Preset: request.x264Preset ?? 'veryfast',
+        editRecipe: recipeWireForGateway(request) ?? null,
+      }),
+    });
+
+    if (!completeRes.ok) {
+      throw new ApiError(
+        await readGatewayError(
+          completeRes,
+          `Upload complete failed (${completeRes.status})`
+        ),
+        completeRes.status
+      );
+    }
+
+    // Multipart ids are finished — do not abort on success path.
+    fileName = '';
+    uploadId = '';
+
+    return (await completeRes.json()) as { jobId?: string; fileName?: string };
+  } catch (err) {
+    await abortMultipart();
+    if (err instanceof ApiError) throw err;
+    mapGatewayNetworkError(err);
+  }
+}
+
+async function uploadGatewayPartWithRetry(options: {
+  gatewayBase: string;
+  fileName: string;
+  uploadId: string;
+  partNumber: number;
+  chunk: Blob;
+  request: BackendExportRequest;
+}): Promise<{ partNumber: number; etag: string }> {
+  const { gatewayBase, fileName, uploadId, partNumber, chunk, request } =
+    options;
+  const params = new URLSearchParams({
+    fileName,
+    uploadId,
+    partNumber: String(partNumber),
+  });
+  const url = `${gatewayBase}/upload/part?${params.toString()}`;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'PUT',
+        body: chunk,
+        signal: request.signal,
+        headers: {
+          Authorization: `Bearer ${request.authToken}`,
+          'Content-Type': 'application/octet-stream',
+        },
+      });
+      if (!res.ok) {
+        throw new ApiError(
+          await readGatewayError(res, `Part ${partNumber} failed (${res.status})`),
+          res.status
+        );
+      }
+      const data = (await res.json()) as { partNumber?: number; etag?: string };
+      if (!data.etag) {
+        throw new ApiError(`Part ${partNumber} missing etag`, 502);
+      }
+      return {
+        partNumber: data.partNumber ?? partNumber,
+        etag: data.etag,
+      };
+    } catch (err) {
+      lastError = err;
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      if (err instanceof ApiError && err.status > 0 && err.status < 500) {
+        throw err;
+      }
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+
+  if (lastError instanceof ApiError) throw lastError;
+  mapGatewayNetworkError(lastError);
+}
+
 
 async function uploadDirect(
   apiBase: string,
