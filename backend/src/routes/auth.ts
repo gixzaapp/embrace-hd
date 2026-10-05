@@ -20,6 +20,7 @@ import {
   deliverWhatsAppOtp,
   isWhatsAppCloudConfigured,
 } from '../services/whatsappOtp.js';
+import { claimTrial } from '../services/trialStore.js';
 
 export const authRouter = Router();
 
@@ -30,10 +31,38 @@ const requestSchema = z.object({
   deviceId: z.string().min(1).max(120).optional(),
 });
 
+const lookupSchema = z.object({
+  phone: z.string().min(8).max(20),
+});
+
 const verifySchema = z.object({
   phone: z.string().min(8).max(20),
   code: z.string().min(4).max(8),
   deviceId: z.string().min(1).max(120).optional(),
+});
+
+/** Check whether a WhatsApp number already has an account (for unified Continue flow). */
+authRouter.post('/lookup-phone', async (req, res, next) => {
+  try {
+    const parsed = lookupSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Invalid body', parsed.error.flatten());
+    }
+
+    const phoneE164 = normalizePhoneE164(parsed.data.phone);
+    if (!phoneE164) {
+      throw new HttpError(400, 'Invalid phone number');
+    }
+
+    const existing = await findUserByPhone(phoneE164);
+    res.json({
+      ok: true,
+      phoneE164,
+      exists: Boolean(existing),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 authRouter.post('/request-otp', async (req, res, next) => {
@@ -124,10 +153,18 @@ authRouter.post('/verify-otp', async (req, res, next) => {
     }
 
     const { record } = result;
+    const deviceId = parsed.data.deviceId ?? record.deviceId;
     const user = await ensureUser(phoneE164, {
       name: record.name,
-      deviceId: parsed.data.deviceId ?? record.deviceId,
+      deviceId,
     });
+
+    // Bind / repair trial to this account as soon as they sign in (survives reinstall).
+    if (deviceId?.trim()) {
+      await claimTrial(deviceId.trim(), user.id).catch((err) => {
+        console.warn('[auth] trial bind on verify failed', err);
+      });
+    }
 
     const session = await createSession(user.id);
 

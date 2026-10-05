@@ -91,15 +91,24 @@ export class TrialManager {
 
   /**
    * App-launch bootstrap:
-   * - No start date → set today and begin trial
+   * - deferStart (online mode) → wait for server before creating a local trial
+   * - No start date → set today and begin trial (offline fallback)
    * - Otherwise return current active / expired status
    */
-  async initializeOnLaunch(): Promise<TrialStatus> {
+  async initializeOnLaunch(options?: { deferStart?: boolean }): Promise<TrialStatus> {
     const existing = await readTrialStartIso();
     if (!existing) {
-      await this.startTrial();
+      if (!options?.deferStart) {
+        await this.startTrial();
+      }
     }
     return this.getTrialStatus();
+  }
+
+  /** Persist server-authoritative trial start (reinstall / re-login sync). */
+  async syncTrialStartFromServer(startDateIso: string): Promise<void> {
+    if (!parseIsoDate(startDateIso)) return;
+    await writeTrialStartIso(startDateIso);
   }
 
   /** Whole calendar days left (0 when expired). */
@@ -127,4 +136,7 @@ export const getTrialStatus = () => trialManager.getTrialStatus();
 export const startTrial = () => trialManager.startTrial();
 export const daysRemaining = () => trialManager.daysRemaining();
 export const isTrialExpired = () => trialManager.isTrialExpired();
-export const initializeTrialOnLaunch = () => trialManager.initializeOnLaunch();
+export const initializeTrialOnLaunch = (options?: { deferStart?: boolean }) =>
+  trialManager.initializeOnLaunch(options);
+export const syncTrialStartFromServer = (startDateIso: string) =>
+  trialManager.syncTrialStartFromServer(startDateIso);

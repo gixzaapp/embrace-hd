@@ -8,7 +8,10 @@ export type ConvertProgressModalProps = {
   open: boolean;
   phases: ConvertPhaseProgress;
   activePhase: ConvertPhase;
+  /** Abort upload while the file is still uploading. */
   onCancel: () => void;
+  /** Dismiss after upload finished — server-side convert continues. */
+  onClose: () => void;
   /** Fires after the modal finishes closing (success or cancel). */
   onDidDismiss?: () => void;
 };
@@ -47,8 +50,11 @@ export const ConvertProgressModal: React.FC<ConvertProgressModalProps> = ({
   phases,
   activePhase,
   onCancel,
+  onClose,
   onDidDismiss,
 }) => {
+  const uploadComplete = (phases.upload ?? 0) >= 1;
+
   return (
     <IonModal
       isOpen={open}
@@ -97,14 +103,22 @@ export const ConvertProgressModal: React.FC<ConvertProgressModalProps> = ({
           })}
         </div>
 
+        {uploadComplete ? (
+          <p className="convert-progress-dismiss-hint">
+            HD conversion can take a while. You can wait here or close this dialog — we
+            will keep converting on our servers and send the finished video to your registered
+            WhatsApp number.
+          </p>
+        ) : null}
+
         <IonButton
           expand="block"
           fill="outline"
           size="small"
           className="convert-progress-cancel"
-          onClick={onCancel}
+          onClick={uploadComplete ? onClose : onCancel}
         >
-          Cancel
+          {uploadComplete ? 'Close' : 'Cancel'}
         </IonButton>
       </div>
     </IonModal>

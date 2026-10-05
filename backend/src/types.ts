@@ -14,6 +14,11 @@ export type AppConfig = {
     showLogout: boolean;
     /** Settings → Unlock Premium / Subscription plans */
     showUnlockPremium: boolean;
+    /**
+     * Backend applies Edit crop/trim/sound during Convert.
+     * Missing/false = older servers; clients should omit editRecipe or fall back.
+     */
+    editRecipe?: boolean;
   };
   minAppVersion: string;
   updatedAt: string;
@@ -63,6 +68,12 @@ export type EntitlementsResponse = {
 
 export type TrialRecord = {
   deviceId: string;
+  startDateIso: string;
+  claimedAt: string;
+};
+
+export type UserTrialRecord = {
+  userId: string;
   startDateIso: string;
   claimedAt: string;
 };

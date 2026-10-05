@@ -194,6 +194,34 @@ export async function deleteGalleryItem(id: string): Promise<void> {
   await writeIndex(next);
 }
 
+/**
+ * Remove Edit/Saved videos from the gallery index (and files on device).
+ * Optionally keep one item (e.g. the just-converted HD export in local mode).
+ */
+export async function clearGalleryLibrary(keepId?: string): Promise<void> {
+  const items = await readIndex();
+  const kept: GalleryItem[] = [];
+
+  for (const item of items) {
+    if (keepId && item.id === keepId) {
+      kept.push(item);
+      continue;
+    }
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Filesystem.deleteFile({
+          path: item.path,
+          directory: GALLERY_DIRECTORY,
+        });
+      } catch {
+        // already gone
+      }
+    }
+  }
+
+  await writeIndex(kept);
+}
+
 export function galleryDisplaySrc(uri: string): string {
   if (!uri) return '';
   if (uri.startsWith('blob:') || uri.startsWith('http')) return uri;

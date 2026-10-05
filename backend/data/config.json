@@ -13,7 +13,8 @@
     "imageToVideo": false,
     "nativeWatermark": false,
     "showLogout": true,
-    "showUnlockPremium": false
+    "showUnlockPremium": false,
+    "editRecipe": true
   },
   "minAppVersion": "0.1.0",
   "updatedAt": "2026-07-12T00:00:00.000Z"

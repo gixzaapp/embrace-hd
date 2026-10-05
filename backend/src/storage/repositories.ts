@@ -7,6 +7,7 @@ import type {
   OtpRecord,
   SessionRecord,
   TrialRecord,
+  UserTrialRecord,
 } from '../types.js';
 import { createFileCollection } from './fileCollection.js';
 import {
@@ -14,6 +15,7 @@ import {
   ddbGet,
   ddbPut,
   ddbQueryByGsi1,
+  ddbScanUsers,
   epochSeconds,
 } from './dynamo.js';
 import {
@@ -139,10 +141,18 @@ async function reencryptLegacyPostgresPhones(): Promise<void> {
 
 /* ----------------------------- Users ----------------------------- */
 
+export type RecentUserName = {
+  name: string;
+  createdAt: string;
+};
+
 export interface UsersRepo {
   getById(id: string): Promise<AuthUser | null>;
   findByPhone(phoneE164: string): Promise<AuthUser | null>;
   put(user: AuthUser): Promise<void>;
+  count(): Promise<number>;
+  /** Newest users first (by createdAt). Names may be placeholders. */
+  listRecent(limit: number): Promise<RecentUserName[]>;
 }
 
 function mapUserRow(row: {
@@ -187,6 +197,21 @@ const fileUsersRepo = (): UsersRepo => {
     async put(user) {
       await c.put(user.id, toStoredUser(user));
     },
+    async count() {
+      const all = await c.values();
+      return all.length;
+    },
+    async listRecent(limit) {
+      const all = await c.values();
+      return all
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, Math.max(0, limit))
+        .map((u) => ({
+          name: u.name?.trim() || '(no name)',
+          createdAt: u.createdAt,
+        }));
+    },
   };
 };
 
@@ -208,6 +233,21 @@ const dynamoUsersRepo = (): UsersRepo => ({
       gsi1pk: `PHONE#${stored.phoneLookup}`,
       ...stored,
     });
+  },
+  async count() {
+    const items = await ddbScanUsers<StoredUser>();
+    return items.length;
+  },
+  async listRecent(limit) {
+    const items = await ddbScanUsers<StoredUser>();
+    return items
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, Math.max(0, limit))
+      .map((u) => ({
+        name: u.name?.trim() || '(no name)',
+        createdAt: u.createdAt,
+      }));
   },
 });
 
@@ -249,6 +289,24 @@ const postgresUsersRepo = (): UsersRepo => ({
         stored.updatedAt,
       ]
     );
+  },
+  async count() {
+    const { rows } = await query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM users'
+    );
+    return Number(rows[0]?.count ?? 0);
+  },
+  async listRecent(limit) {
+    const { rows } = await query<{ name: string | null; created_at: Date | string }>(
+      `SELECT name, created_at FROM users
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [Math.max(0, limit)]
+    );
+    return rows.map((row) => ({
+      name: row.name?.trim() || '(no name)',
+      createdAt: new Date(row.created_at).toISOString(),
+    }));
   },
 });
 
@@ -519,8 +577,12 @@ const postgresTrialsRepo = (): TrialsRepo => ({
       `INSERT INTO trials (device_id, start_date_iso, claimed_at)
        VALUES ($1, $2, $3)
        ON CONFLICT (device_id) DO UPDATE SET
-         start_date_iso = EXCLUDED.start_date_iso,
-         claimed_at = EXCLUDED.claimed_at`,
+         start_date_iso = LEAST(trials.start_date_iso, EXCLUDED.start_date_iso),
+         claimed_at = CASE
+           WHEN EXCLUDED.start_date_iso < trials.start_date_iso
+           THEN EXCLUDED.claimed_at
+           ELSE trials.claimed_at
+         END`,
       [record.deviceId, record.startDateIso, record.claimedAt]
     );
   },
@@ -532,6 +594,87 @@ export const trialsRepo: TrialsRepo =
     : driver === 'dynamodb'
       ? dynamoTrialsRepo()
       : fileTrialsRepo();
+
+/* ------------------------- User trials ------------------------- */
+
+export interface UserTrialsRepo {
+  get(userId: string): Promise<UserTrialRecord | null>;
+  put(record: UserTrialRecord): Promise<void>;
+}
+
+function mapUserTrialRow(row: {
+  user_id: string;
+  start_date_iso: Date | string;
+  claimed_at: Date | string;
+}): UserTrialRecord {
+  return {
+    userId: row.user_id,
+    startDateIso: new Date(row.start_date_iso).toISOString(),
+    claimedAt: new Date(row.claimed_at).toISOString(),
+  };
+}
+
+const fileUserTrialsRepo = (): UserTrialsRepo => {
+  const c = createFileCollection<UserTrialRecord>('user_trials.json');
+  return {
+    get: (userId) => c.get(userId),
+    async put(record) {
+      const existing = await c.get(record.userId);
+      if (
+        existing?.startDateIso &&
+        new Date(existing.startDateIso).getTime() <
+          new Date(record.startDateIso).getTime()
+      ) {
+        return;
+      }
+      await c.put(record.userId, record);
+    },
+  };
+};
+
+const dynamoUserTrialsRepo = (): UserTrialsRepo => ({
+  get: (userId) => ddbGet<UserTrialRecord>(`USER_TRIAL#${userId}`, 'USER_TRIAL'),
+  async put(record) {
+    await ddbPut({
+      pk: `USER_TRIAL#${record.userId}`,
+      sk: 'USER_TRIAL',
+      ...record,
+    });
+  },
+});
+
+const postgresUserTrialsRepo = (): UserTrialsRepo => ({
+  async get(userId) {
+    const { rows } = await query('SELECT * FROM user_trials WHERE user_id = $1', [
+      userId,
+    ]);
+    return rows[0]
+      ? mapUserTrialRow(rows[0] as Parameters<typeof mapUserTrialRow>[0])
+      : null;
+  },
+  async put(record) {
+    // Prefer the earliest start date so a reinstall cannot reset an old trial.
+    await query(
+      `INSERT INTO user_trials (user_id, start_date_iso, claimed_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id) DO UPDATE SET
+         start_date_iso = LEAST(user_trials.start_date_iso, EXCLUDED.start_date_iso),
+         claimed_at = CASE
+           WHEN EXCLUDED.start_date_iso < user_trials.start_date_iso
+           THEN EXCLUDED.claimed_at
+           ELSE user_trials.claimed_at
+         END`,
+      [record.userId, record.startDateIso, record.claimedAt]
+    );
+  },
+});
+
+export const userTrialsRepo: UserTrialsRepo =
+  driver === 'postgres'
+    ? postgresUserTrialsRepo()
+    : driver === 'dynamodb'
+      ? dynamoUserTrialsRepo()
+      : fileUserTrialsRepo();
 
 /* ----------------------------- Config ----------------------------- */
 

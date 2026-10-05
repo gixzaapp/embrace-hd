@@ -1,10 +1,19 @@
 import { useCallback, useState } from 'react';
-import { IonContent, IonPage, IonRefresher, IonRefresherContent, IonToast, useIonViewWillEnter } from '@ionic/react';
+import {
+  IonContent,
+  IonPage,
+  IonRefresher,
+  IonRefresherContent,
+  IonToast,
+  useIonRouter,
+  useIonViewWillEnter,
+} from '@ionic/react';
 import {
   deleteGalleryItem,
   listGalleryItems,
+  setWorkingMedia,
   type GalleryItem,
-} from '../services/galleryLibrary';
+} from '../services';
 import { videoGeneratorService } from '../services/videoGeneratorService';
 import { AppHeader, GalleryVideoThumb, StatusShareSheet, useTrial } from '../ui';
 import './Gallery.css';
@@ -28,8 +37,11 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Saved converted videos + share (edit controls live on Home). */
 const Gallery: React.FC = () => {
   const { shouldShowAds } = useTrial();
+  const router = useIonRouter();
+
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -47,7 +59,7 @@ const Gallery: React.FC = () => {
       const list = await listGalleryItems();
       setItems(list);
     } catch (err) {
-      console.warn('[Gallery] list failed', err);
+      console.warn('[Library] list failed', err);
       setItems([]);
     } finally {
       setLoading(false);
@@ -57,6 +69,15 @@ const Gallery: React.FC = () => {
   useIonViewWillEnter(() => {
     void refresh();
   });
+
+  const onUseOnHome = (item: GalleryItem) => {
+    setWorkingMedia({
+      uri: item.uri,
+      name: item.title || item.name,
+      mimeType: 'video/mp4',
+    });
+    router.push('/home', 'root');
+  };
 
   const onShare = (item: GalleryItem) => {
     setShareUri(item.uri);
@@ -132,7 +153,7 @@ const Gallery: React.FC = () => {
     try {
       await deleteGalleryItem(item.id);
       setItems((prev) => prev.filter((i) => i.id !== item.id));
-      setToast({ open: true, message: 'Removed from gallery' });
+      setToast({ open: true, message: 'Removed from Library' });
     } catch (err) {
       setToast({
         open: true,
@@ -162,29 +183,41 @@ const Gallery: React.FC = () => {
         <AppHeader />
         <div className="gallery-body">
           <div className="gallery-heading-row">
-            <h2 className="gallery-heading">Gallery</h2>
+            <h2 className="gallery-heading">Library</h2>
             <span className="font-label-sm gallery-count">
               {loading ? '…' : `${items.length} SAVED`}
             </span>
           </div>
 
+          <p className="crop-intro">
+            Converted HD Status videos are saved here. Share them, or send one
+            back to Home to Convert again.
+          </p>
+
           {!loading && items.length === 0 ? (
             <div className="gallery-empty glass-card">
-              <span className="material-symbols-outlined gallery-empty-icon" aria-hidden>
-                grid_view
+              <span
+                className="material-symbols-outlined gallery-empty-icon"
+                aria-hidden
+              >
+                video_library
               </span>
-              <h2 className="gallery-empty-title">No exports yet</h2>
+              <h2 className="gallery-empty-title">No saved videos yet</h2>
               <p className="gallery-empty-copy">
-                Convert a video on Home — it is saved to your phone and listed here.
+                Convert a video on Home and it will show up here for sharing.
               </p>
             </div>
-          ) : (
+          ) : null}
+
+          {items.length > 0 ? (
             <div className="gallery-grid">
               {items.map((item) => (
                 <article key={item.id} className="gallery-card glass-card">
                   <div className="gallery-thumb">
                     <GalleryVideoThumb uri={item.uri} alt={item.title} />
-                    <span className="gallery-badge font-label-sm">{item.statusLengthSec}s</span>
+                    <span className="gallery-badge font-label-sm">
+                      {item.statusLengthSec}s
+                    </span>
                   </div>
                   <div className="gallery-meta">
                     <p className="gallery-title">{item.title}</p>
@@ -198,12 +231,23 @@ const Gallery: React.FC = () => {
                       type="button"
                       className="gallery-btn gallery-btn--primary"
                       disabled={busyId === item.id}
-                      onClick={() => void onShare(item)}
+                      onClick={() => onUseOnHome(item)}
+                      title="Use on Home"
+                    >
+                      <span className="material-symbols-outlined" aria-hidden>
+                        home
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="gallery-btn gallery-btn--ghost"
+                      disabled={busyId === item.id}
+                      onClick={() => onShare(item)}
+                      aria-label="Share"
                     >
                       <span className="material-symbols-outlined" aria-hidden>
                         share
                       </span>
-                      Share
                     </button>
                     <button
                       type="button"
@@ -220,24 +264,24 @@ const Gallery: React.FC = () => {
                 </article>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
         <StatusShareSheet
           open={shareOpen}
-          fileUri={shareUri}
           busy={shareBusy}
+          fileUri={shareUri ?? ''}
           onDismiss={() => setShareOpen(false)}
-          onPostToStatus={onPostToStatus}
-          onBestQuality={onBestQuality}
-          onShareToFolder={onShareToFolder}
+          onPostToStatus={() => void onPostToStatus()}
+          onBestQuality={() => void onBestQuality()}
+          onShareToFolder={() => void onShareToFolder()}
         />
 
         <IonToast
           className="eh-toast"
           isOpen={toast.open}
           message={toast.message}
-          duration={2800}
+          duration={3200}
           position="bottom"
           positionAnchor={shouldShowAds ? 'app-ad-footer' : 'app-tab-bar'}
           onDidDismiss={() => setToast((t) => ({ ...t, open: false }))}

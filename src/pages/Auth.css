@@ -42,22 +42,60 @@
   color: #94a3b8;
 }
 
-.auth-segment {
-  margin-bottom: 4px;
+.auth-change-number {
+  align-self: flex-start;
+  margin: -4px 0 0;
+  --color: #94a3b8;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.auth-field--phone {
+  flex: 1;
+}
+
+.auth-field-label {
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-bottom: 8px;
 }
 
 .auth-phone-row {
   display: grid;
-  grid-template-columns: 88px 1fr;
+  grid-template-columns: minmax(118px, auto) 1fr;
   gap: 10px;
+  align-items: end;
 }
 
+/*
+ * Ionic outline borders often disappear on dark backgrounds.
+ * Draw a host border ourselves and hide Ionic's highlight stroke.
+ */
 .auth-input {
   --background: rgba(15, 23, 42, 0.7);
-  --border-color: rgba(148, 163, 184, 0.28);
   --color: #e2e8f0;
   --placeholder-color: #64748b;
-  --highlight-color-focused: #14b8a6;
+  --padding-start: 12px;
+  --padding-end: 12px;
+  --padding-top: 10px;
+  --padding-bottom: 10px;
+  --border-width: 0;
+  --highlight-height: 0;
+  --highlight-color-focused: transparent;
+  min-height: 42px;
+  border: 1px solid #64748b;
+  border-radius: 4px;
+  transition: border-color 0.2s;
+}
+
+.auth-input.has-focus,
+.auth-input.ion-focused {
+  border-color: #14b8a6;
 }
 
 .auth-primary {
@@ -65,8 +103,14 @@
   --background: #14b8a6;
   --background-activated: #0d9488;
   --color: #042f2e;
+  --border-radius: 4px;
+  border-radius: 4px;
   font-weight: 700;
   min-height: 48px;
+}
+
+.auth-primary::part(native) {
+  border-radius: 4px;
 }
 
 .auth-otp-actions {

@@ -11,6 +11,7 @@ import { authRouter } from './routes/auth.js';
 import { configRouter } from './routes/config.js';
 import { entitlementsRouter } from './routes/entitlements.js';
 import { exportRouter } from './routes/export.js';
+import { slackRouter } from './routes/slack.js';
 import { subscriptionRouter } from './routes/subscription.js';
 import { trialRouter } from './routes/trial.js';
 import { whatsappWebhookRouter } from './routes/whatsappWebhook.js';
@@ -65,6 +66,28 @@ export async function createApp() {
     })
   );
   app.use(express.json({ limit: '64kb' }));
+  /**
+   * Slack slash commands: keep the exact raw body for HMAC, then parse form fields.
+   * (urlencoded `verify` alone is easy to break behind proxies.)
+   */
+  app.use(
+    '/v1/slack/commands',
+    express.raw({ type: '*/*', limit: '256kb' }),
+    (req, _res, next) => {
+      const slackReq = req as express.Request & { rawBody?: Buffer };
+      const buf = Buffer.isBuffer(req.body)
+        ? req.body
+        : Buffer.from(typeof req.body === 'string' ? req.body : '');
+      slackReq.rawBody = buf;
+      const params = new URLSearchParams(buf.toString('utf8'));
+      const body: Record<string, string> = {};
+      for (const [k, v] of params.entries()) {
+        body[k] = v;
+      }
+      req.body = body;
+      next();
+    }
+  );
   app.use(requestCounter);
   startRequestLogging();
 
@@ -93,6 +116,7 @@ export async function createApp() {
   app.use('/v1/trial', trialRouter);
   app.use('/v1/entitlements', entitlementsRouter);
   app.use('/v1/export', exportRouter);
+  app.use('/v1/slack', slackRouter);
 
   app.use(errorHandler);
   return app;

@@ -15,6 +15,8 @@ export type RemoteAppConfig = {
     nativeWatermark: boolean;
     showLogout: boolean;
     showUnlockPremium: boolean;
+    /** Present on new backends that apply crop/trim/sound during Convert. */
+    editRecipe?: boolean;
   };
   minAppVersion: string;
   updatedAt: string;
@@ -61,11 +63,14 @@ export async function claimTrialRemote(deviceId: string): Promise<TrialStatus> {
 
 export async function fetchEntitlementsRemote(
   deviceId: string,
-  appUserId?: string
+  appUserId?: string,
+  authToken?: string
 ): Promise<BackendEntitlementsResponse> {
   const params = new URLSearchParams({ deviceId });
   if (appUserId) params.set('appUserId', appUserId);
-  return apiFetch<BackendEntitlementsResponse>(`/v1/entitlements?${params}`);
+  return apiFetch<BackendEntitlementsResponse>(`/v1/entitlements?${params}`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+  });
 }
 
 export { isBackendEnabled };

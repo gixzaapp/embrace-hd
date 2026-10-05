@@ -122,13 +122,14 @@ export class VideoEngine {
             error: 'Sign in required for HD convert',
           };
         }
-        await exportViaBackend({
+        const result = await exportViaBackend({
           sourceUri: source.uri,
           mimeType: source.mimeType,
           preset: encode.preset,
           statusLengthSec: maxDurationSec,
           delivery: 'status',
           x264Preset: encode.x264Preset,
+          editRecipe: encode.editRecipe,
           authToken,
           onProgress,
           signal: options?.signal,
@@ -140,6 +141,7 @@ export class VideoEngine {
           progress: 1,
           deliveredVia: 'whatsapp',
           outputUri: undefined,
+          editsDropped: result.editsDropped,
         };
       }
 

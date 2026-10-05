@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import { IonContent, IonPage, IonToast } from '@ionic/react';
+import {
+  IonContent,
+  IonPage,
+  IonToast,
+  useIonViewWillEnter,
+  useIonViewWillLeave,
+} from '@ionic/react';
 import { type MediaSource, type StatusLengthSec } from '../core';
 import {
   adsManager,
   clearEmbraceHdMediaCache,
+  clearGalleryLibrary,
+  clearWorkingMedia,
   fetchConversationWindow,
   getClientBusinessWhatsAppE164,
+  getWorkingMedia,
+  hasMeaningfulEditRecipe,
   isBackendEnabled,
   openBusinessWhatsAppChat,
   pickStatusMedia,
+  setWorkingMedia,
   videoGeneratorService,
   type ConvertPhase,
   type EncodeQualityChoice,
@@ -20,6 +31,7 @@ import {
   AppHeader,
   ConvertButton,
   ConvertProgressModal,
+  EditWorkspace,
   QualityDecisionModal,
   StatusLengthPicker,
   TrialProgressBar,
@@ -27,8 +39,10 @@ import {
   useAuth,
   useTrial,
   VideoTimelineThumbnails,
+  WhatsAppActivateModal,
   WhatsAppDeliveredModal,
   type ConvertPhaseProgress,
+  type EditWorkspaceHandle,
 } from '../ui';
 import './Home.css';
 
@@ -68,10 +82,18 @@ const Home: React.FC = () => {
   const [convertActivePhase, setConvertActivePhase] =
     useState<ConvertPhase>('upload');
   const abortRef = useRef<AbortController | null>(null);
+  const convertDismissedEarlyRef = useRef(false);
   const interstitialPromiseRef = useRef<Promise<unknown>>(Promise.resolve());
   const contentRef = useRef<HTMLIonContentElement>(null);
   const convertAnchorRef = useRef<HTMLDivElement>(null);
+  const editWorkspaceRef = useRef<EditWorkspaceHandle | null>(null);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
+  const [activateBusy, setActivateBusy] = useState(false);
+  const [activateTarget, setActivateTarget] = useState<{
+    businessPhoneE164: string;
+    prefillMessage: string;
+  } | null>(null);
   const [toast, setToast] = useState<{ open: boolean; message: string }>({
     open: false,
     message: '',
@@ -83,7 +105,6 @@ const Home: React.FC = () => {
   }, [shouldShowAds]);
 
   const scrollConvertIntoView = () => {
-    // Wait for timeline / layout to paint so the Convert button isn't still off-screen.
     window.setTimeout(() => {
       void (async () => {
         const content = contentRef.current;
@@ -105,13 +126,55 @@ const Home: React.FC = () => {
     }, 180);
   };
 
-  // After pick (and again when duration/timeline settles), bring Convert into view.
   useEffect(() => {
     if (!selectedMedia?.uri) return;
     scrollConvertIntoView();
   }, [selectedMedia?.uri, videoDurationSec]);
 
-  // Trial ended → force 30s Status (60s requires Premium / active trial).
+  const applyMedia = (media: MediaSource, toastMessage?: string) => {
+    setSelectedMedia(media);
+    setWorkingMedia(media);
+    void (async () => {
+      let durationSec = 0;
+      if (media.kind !== 'image' && media.uri) {
+        try {
+          durationSec = await probeVideoDurationSec(media.uri);
+        } catch {
+          // ignore probe failures
+        }
+      }
+      setVideoDurationSec(durationSec);
+      if (toastMessage) {
+        setToast({ open: true, message: toastMessage });
+      } else {
+        setToast({
+          open: true,
+          message: durationSec
+            ? `Selected · ${Math.round(durationSec)}s video`
+            : `Selected: ${media.name ?? media.kind ?? 'media'}`,
+        });
+      }
+    })();
+  };
+
+  const selectedUriRef = useRef<string | null>(null);
+  selectedUriRef.current = selectedMedia?.uri ?? null;
+
+  // Library → Home handoff within the same app session
+  useIonViewWillEnter(() => {
+    const working = getWorkingMedia();
+    if (!working?.uri || working.kind === 'image') return;
+    if (selectedUriRef.current === working.uri) return;
+    applyMedia(
+      working,
+      `Ready · tap Convert${working.name ? ` · ${working.name}` : ''}`
+    );
+  });
+
+  useIonViewWillLeave(() => {
+    editWorkspaceRef.current?.pausePreview();
+  });
+
   useEffect(() => {
     if (canUse60sStatus) return;
     if (statusLengthSec === 30) return;
@@ -125,20 +188,7 @@ const Home: React.FC = () => {
     setBusy(true);
     try {
       const media = await pickStatusMedia();
-      setSelectedMedia(media);
-
-      let durationSec = 0;
-      if (media.kind !== 'image' && media.uri) {
-        durationSec = await probeVideoDurationSec(media.uri);
-      }
-      setVideoDurationSec(durationSec);
-
-      setToast({
-        open: true,
-        message: durationSec
-          ? `Selected · ${Math.round(durationSec)}s video`
-          : `Selected: ${media.name ?? media.kind ?? 'media'}`,
-      });
+      applyMedia(media);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not pick media';
       if (!/cancel|dismiss|No media selected/i.test(message)) {
@@ -153,13 +203,60 @@ const Home: React.FC = () => {
     abortRef.current?.abort();
   };
 
+  const onCloseConvertProgress = () => {
+    convertDismissedEarlyRef.current = true;
+    setConvertOpen(false);
+    resetHomeWorkspace();
+    setBusy(false);
+  };
+
   const onCancelQuality = () => {
     setQualityOpen(false);
+  };
+
+  const onDismissActivate = () => {
+    if (activateBusy) return;
+    setActivateOpen(false);
+    setActivateTarget(null);
+  };
+
+  const onActivateWhatsApp = async () => {
+    if (!activateTarget) return;
+    setActivateBusy(true);
+    try {
+      await openBusinessWhatsAppChat({
+        businessPhoneE164: activateTarget.businessPhoneE164,
+        text: activateTarget.prefillMessage,
+      });
+      setActivateOpen(false);
+      setActivateTarget(null);
+      setToast({
+        open: true,
+        message:
+          'Send the message in WhatsApp, wait a moment, then tap Convert again.',
+      });
+    } catch (err) {
+      setToast({
+        open: true,
+        message:
+          err instanceof Error ? err.message : 'Could not open WhatsApp',
+      });
+    } finally {
+      setActivateBusy(false);
+    }
   };
 
   const resetConvertPhases = () => {
     setConvertPhases({ upload: 0, convert: 0, send: 0 });
     setConvertActivePhase('upload');
+  };
+
+  const resetHomeWorkspace = () => {
+    editWorkspaceRef.current?.pausePreview();
+    setSelectedMedia(null);
+    setVideoDurationSec(0);
+    clearWorkingMedia();
+    void clearEmbraceHdMediaCache();
   };
 
   const onCreateStatus = async () => {
@@ -171,7 +268,6 @@ const Home: React.FC = () => {
       return;
     }
 
-    // Require an open WhatsApp 24h conversation window before upload (backend delivery).
     if (isBackendEnabled()) {
       if (!isAuthenticated || !token) {
         setToast({
@@ -193,15 +289,11 @@ const Home: React.FC = () => {
             });
             return;
           }
-          await openBusinessWhatsAppChat({
+          setActivateTarget({
             businessPhoneE164: business,
-            text: windowStatus.prefillMessage,
+            prefillMessage: windowStatus.prefillMessage,
           });
-          setToast({
-            open: true,
-            message:
-              'Message the business WhatsApp number, wait a moment, then tap Convert again.',
-          });
+          setActivateOpen(true);
           return;
         }
       } catch (err) {
@@ -214,6 +306,22 @@ const Home: React.FC = () => {
         });
         return;
       }
+    }
+
+    const recipePreview =
+      selectedMedia.kind !== 'image'
+        ? editWorkspaceRef.current?.getRecipe()
+        : undefined;
+    if (
+      selectedMedia.kind !== 'image' &&
+      editWorkspaceRef.current &&
+      recipePreview === null
+    ) {
+      setToast({
+        open: true,
+        message: 'Pick a music file in Sound, or turn Mute off',
+      });
+      return;
     }
 
     setEncodeQuality(DEFAULT_ENCODE_QUALITY);
@@ -233,15 +341,36 @@ const Home: React.FC = () => {
     setEncodeQuality(quality);
     setQualityOpen(false);
 
+    editWorkspaceRef.current?.pausePreview();
+    const recipeRaw = editWorkspaceRef.current?.getRecipe();
+    if (editWorkspaceRef.current && recipeRaw === null) {
+      setToast({
+        open: true,
+        message: 'Pick a music file in Sound, or turn Mute off',
+      });
+      return;
+    }
+    const editRecipe = recipeRaw ?? undefined;
+
+    if (hasMeaningfulEditRecipe(editRecipe) && !isBackendEnabled()) {
+      setToast({
+        open: true,
+        message:
+          'Edit settings need online Convert — connect the API or remove edits',
+      });
+      return;
+    }
+
     const controller = new AbortController();
     abortRef.current = controller;
+    convertDismissedEarlyRef.current = false;
     setBusy(true);
     resetConvertPhases();
     setConvertOpen(true);
+    let convertStarted = true;
 
     interstitialPromiseRef.current = shouldShowAds
       ? (async () => {
-          // Let the convert progress UI paint briefly before the full-screen ad.
           await new Promise((r) => setTimeout(r, 2000));
           await adsManager.showConvertInterstitial();
         })().catch((err) => {
@@ -256,12 +385,12 @@ const Home: React.FC = () => {
         canExportHd,
         authToken: token ?? undefined,
         x264Preset: quality,
+        editRecipe,
         signal: controller.signal,
         onProgress: (update) => {
           setConvertActivePhase(update.phase);
           setConvertPhases((prev) => {
             const next = { ...prev };
-            // Keep earlier phases completed at 100%
             if (update.phase === 'convert' || update.phase === 'send') {
               next.upload = 1;
             }
@@ -275,12 +404,13 @@ const Home: React.FC = () => {
       });
       setConvertPhases({ upload: 1, convert: 1, send: 1 });
       setConvertActivePhase('send');
-      setConvertOpen(false);
+      if (!convertDismissedEarlyRef.current) {
+        setConvertOpen(false);
+      }
 
-      // Drop selection + staged cache copies — job is done on WhatsApp.
-      setSelectedMedia(null);
-      setVideoDurationSec(0);
-      void clearEmbraceHdMediaCache();
+      void clearGalleryLibrary(exported.galleryItem?.id).catch((err) => {
+        console.warn('[Home] clear Library gallery failed', err);
+      });
 
       try {
         await interstitialPromiseRef.current;
@@ -288,29 +418,42 @@ const Home: React.FC = () => {
         // ignore ad failures
       }
 
-      if (exported.deliveredVia === 'whatsapp') {
-        setDeliveredOpen(true);
-        setToast({
-          open: true,
-          message: 'Sent — check your WhatsApp',
-        });
-      } else {
-        setToast({
-          open: true,
-          message: `Saved to Gallery · ${exported.statusLengthSec}s ready`,
-        });
+      if (!convertDismissedEarlyRef.current) {
+        if (exported.deliveredVia === 'whatsapp') {
+          setDeliveredOpen(true);
+          setToast({
+            open: true,
+            message: exported.editsDropped
+              ? 'Sent — check WhatsApp (server update needed for crop/trim/sound)'
+              : 'Sent — check your WhatsApp',
+          });
+        } else {
+          setToast({
+            open: true,
+            message: exported.editsDropped
+              ? `HD ready · ${exported.statusLengthSec}s (edits skipped — update server)`
+              : `HD ready · ${exported.statusLengthSec}s`,
+          });
+        }
       }
     } catch (err) {
-      setConvertOpen(false);
+      if (!convertDismissedEarlyRef.current) {
+        setConvertOpen(false);
+      }
       if (isAbortError(err)) {
-        setToast({ open: true, message: 'Convert cancelled' });
-      } else {
+        if (!convertDismissedEarlyRef.current) {
+          setToast({ open: true, message: 'Convert cancelled' });
+        }
+      } else if (!convertDismissedEarlyRef.current) {
         setToast({
           open: true,
           message: err instanceof Error ? err.message : 'Could not prepare video',
         });
       }
     } finally {
+      if (convertStarted && !convertDismissedEarlyRef.current) {
+        resetHomeWorkspace();
+      }
       abortRef.current = null;
       setBusy(false);
       setConvertOpen(false);
@@ -333,7 +476,8 @@ const Home: React.FC = () => {
 
           {isTrialExpired && !canUse60sStatus ? (
             <p className="home-lock-note" role="status">
-              Trial ended — convert with 30s Status. Subscribe to unlock 60s.
+              Free with ads — longer videos split into 30-second Status parts (e.g. 60s → 2 parts).
+              Premium unlocks 60-second Status and removes ads.
             </p>
           ) : null}
 
@@ -342,6 +486,16 @@ const Home: React.FC = () => {
             disabled={controlsDisabled}
             onClick={onPickMedia}
           />
+
+          {selectedMedia?.uri && selectedMedia.kind !== 'image' ? (
+            <EditWorkspace
+              ref={editWorkspaceRef}
+              source={selectedMedia}
+              disabled={controlsDisabled}
+              onChangeSource={() => void onPickMedia()}
+              onToast={(message) => setToast({ open: true, message })}
+            />
+          ) : null}
 
           <StatusLengthPicker
             value={statusLengthSec}
@@ -354,7 +508,7 @@ const Home: React.FC = () => {
               setToast({
                 open: true,
                 message:
-                  '60-second Status is locked after your trial. Convert with 30s, or subscribe in Settings to unlock 60s.',
+                  '60-second Status is Premium only. Free plan splits longer videos into 30-second parts — subscribe in Settings.',
               });
             }}
             disabled={controlsDisabled}
@@ -393,11 +547,19 @@ const Home: React.FC = () => {
           phases={convertPhases}
           activePhase={convertActivePhase}
           onCancel={onCancelConvert}
+          onClose={onCloseConvertProgress}
         />
 
         <WhatsAppDeliveredModal
           open={deliveredOpen}
           onDismiss={() => setDeliveredOpen(false)}
+        />
+
+        <WhatsAppActivateModal
+          open={activateOpen}
+          busy={activateBusy}
+          onActivate={() => void onActivateWhatsApp()}
+          onDismiss={onDismissActivate}
         />
 
         <IonToast

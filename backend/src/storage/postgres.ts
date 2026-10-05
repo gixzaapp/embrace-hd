@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS trials (
   claimed_at      TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_trials (
+  user_id         UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  start_date_iso  TIMESTAMPTZ NOT NULL,
+  claimed_at      TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS app_config (
   id          INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   config      JSONB NOT NULL,

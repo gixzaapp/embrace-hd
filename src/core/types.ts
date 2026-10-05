@@ -33,6 +33,8 @@ export type RenderJob = {
   error?: string;
   /** @deprecated Watermark burn-in removed; kept optional for old callers */
   watermarkApplied?: boolean;
+  /** Backend could not apply crop/trim/sound (older server) — converted original. */
+  editsDropped?: boolean;
 };
 
 export type StatusExportOptions = {

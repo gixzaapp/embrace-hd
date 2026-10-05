@@ -98,7 +98,7 @@ export const StatusShareSheet: React.FC<StatusShareSheetProps> = ({
           className="status-share-dismiss"
           onClick={onDismiss}
         >
-          Not now — saved in Gallery
+          Not now — saved in Crop
         </IonButton>
       </div>
     </IonModal>

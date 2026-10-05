@@ -29,8 +29,8 @@
   text-transform: uppercase;
 }
 
-.trial-progress-value--locked {
-  color: var(--eh-error);
+.trial-progress-value--free {
+  color: var(--eh-secondary);
 }
 
 .trial-progress-track {
@@ -50,8 +50,8 @@
   transition: width 0.4s ease;
 }
 
-.trial-progress-fill--locked {
-  background: linear-gradient(90deg, #93000a, #ffb4ab);
+.trial-progress-fill--free {
+  background: linear-gradient(90deg, var(--eh-secondary), var(--eh-primary));
 }
 
 .trial-progress-sheen {

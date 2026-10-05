@@ -13,6 +13,12 @@ export type RequestOtpResponse = {
   otpHint?: string;
 };
 
+export type LookupPhoneResponse = {
+  ok: boolean;
+  phoneE164: string;
+  exists: boolean;
+};
+
 export type VerifyOtpResponse = {
   ok: boolean;
   token: string;
@@ -27,6 +33,14 @@ function requireBackend(): void {
       0
     );
   }
+}
+
+export async function lookupPhone(phone: string): Promise<LookupPhoneResponse> {
+  requireBackend();
+  return apiFetch<LookupPhoneResponse>('/v1/auth/lookup-phone', {
+    method: 'POST',
+    body: JSON.stringify({ phone }),
+  });
 }
 
 export async function requestWhatsAppOtp(options: {

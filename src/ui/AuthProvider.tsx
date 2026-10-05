@@ -12,9 +12,11 @@ import { ApiError } from '../services/apiClient';
 import {
   fetchAuthMe,
   logoutAuth,
+  lookupPhone,
   requestWhatsAppOtp,
   verifyWhatsAppOtp,
   type AuthMode,
+  type LookupPhoneResponse,
   type RequestOtpResponse,
 } from '../services/authApi';
 import {
@@ -31,6 +33,7 @@ type AuthContextValue = {
   token: string | null;
   loading: boolean;
   isAuthenticated: boolean;
+  lookupPhone: (phone: string) => Promise<LookupPhoneResponse>;
   requestOtp: (options: {
     phone: string;
     mode: AuthMode;
@@ -101,6 +104,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  const lookupPhoneNumber = useCallback(async (phone: string) => {
+    return lookupPhone(phone);
   }, []);
 
   const requestOtp = useCallback(
@@ -177,12 +184,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       token: session?.token ?? null,
       loading,
       isAuthenticated: Boolean(session?.token && session?.user),
+      lookupPhone: lookupPhoneNumber,
       requestOtp,
       verifyOtp,
       logout,
       refreshMe,
     }),
-    [session, loading, requestOtp, verifyOtp, logout, refreshMe]
+    [session, loading, lookupPhoneNumber, requestOtp, verifyOtp, logout, refreshMe]
   );
 
   return (

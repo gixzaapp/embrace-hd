@@ -5,6 +5,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { env } from '../config/env.js';
 
@@ -75,4 +76,26 @@ export async function ddbQueryByGsi1<T>(gsi1pk: string): Promise<T[]> {
     })
   );
   return (out.Items as T[] | undefined) ?? [];
+}
+
+/** Scan USER items (sk = USER). Paginates until exhausted or maxItems reached. */
+export async function ddbScanUsers<T>(maxItems = 5000): Promise<T[]> {
+  const items: T[] = [];
+  let startKey: Record<string, unknown> | undefined;
+  do {
+    const out = await ddb().send(
+      new ScanCommand({
+        TableName: tableName(),
+        FilterExpression: 'sk = :sk',
+        ExpressionAttributeValues: { ':sk': 'USER' },
+        ExclusiveStartKey: startKey,
+      })
+    );
+    for (const item of out.Items ?? []) {
+      items.push(item as T);
+      if (items.length >= maxItems) return items;
+    }
+    startKey = out.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (startKey);
+  return items;
 }

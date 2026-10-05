@@ -6,6 +6,7 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from '@ffprobe-installer/ffprobe';
 import { env } from '../config/env.js';
 import { HttpError } from '../middleware/errorHandler.js';
+import { isNoOpEditRecipe, type EditRecipe } from './editRecipe.js';
 
 export type ExportPreset = '720p' | '1080p';
 
@@ -29,6 +30,10 @@ export type ExportOptions = {
   delivery?: ExportDelivery;
   /** Per-job override; falls back to FFMPEG_X264_PRESET / veryfast */
   x264Preset?: X264EncodePreset;
+  /** Edit-tab crop/trim/sound applied before Status chunking. */
+  editRecipe?: EditRecipe;
+  /** Local music file when editRecipe.soundMode === 'file'. */
+  musicPath?: string;
 };
 
 /**
@@ -460,6 +465,145 @@ function buildEncodeArgs(options: {
   ];
 }
 
+function edgeCropFilter(crop: NonNullable<EditRecipe['crop']>): string | null {
+  const top = Math.max(0, Math.min(40, crop.top || 0));
+  const bottom = Math.max(0, Math.min(40, crop.bottom || 0));
+  const left = Math.max(0, Math.min(40, crop.left || 0));
+  const right = Math.max(0, Math.min(40, crop.right || 0));
+  if (top + bottom + left + right <= 0) return null;
+  if (top + bottom >= 95 || left + right >= 95) {
+    throw new HttpError(400, 'editRecipe crop insets are too large');
+  }
+  const widthExpr = `iw*(1-${(left + right) / 100})`;
+  const heightExpr = `ih*(1-${(top + bottom) / 100})`;
+  const xExpr = `iw*${left / 100}`;
+  const yExpr = `ih*${top / 100}`;
+  return `crop=${widthExpr}:${heightExpr}:${xExpr}:${yExpr}`;
+}
+
+/**
+ * Apply trim / edge crop / sound once, then feed the result into Status encode.
+ * Returns the (possibly new) input path and whether the caller should delete it.
+ */
+async function preprocessEditRecipe(options: {
+  inputPath: string;
+  editRecipe?: EditRecipe;
+  musicPath?: string;
+  sourceDurationSec?: number;
+}): Promise<{ inputPath: string; cleanupPath?: string }> {
+  let recipe = options.editRecipe;
+  if (!recipe || isNoOpEditRecipe(recipe, options.sourceDurationSec)) {
+    return { inputPath: options.inputPath };
+  }
+
+  if (recipe.soundMode === 'file' && !options.musicPath) {
+    console.warn(
+      '[Export] preprocess soundMode=file without musicPath — treating as mute'
+    );
+    recipe = { ...recipe, soundMode: 'mute' };
+  }
+
+  const { uploads } = await ensureExportDirs();
+  const outPath = path.join(uploads, `edit_${randomUUID()}.mp4`);
+
+  const trimStart = recipe.trim?.startSec ?? 0;
+  let trimDuration: number | undefined;
+  if (recipe.trim) {
+    trimDuration = Math.max(0.1, recipe.trim.endSec - recipe.trim.startSec);
+  }
+
+  const cropVf = recipe.crop ? edgeCropFilter(recipe.crop) : null;
+  const args: string[] = ['-y', '-hide_banner', '-loglevel', 'error'];
+
+  if (trimStart > 0.01) {
+    args.push('-ss', String(trimStart));
+  }
+  args.push('-i', options.inputPath);
+
+  if (recipe.soundMode === 'file' && options.musicPath) {
+    const musicOffset = Math.max(0, recipe.musicOffsetSec ?? 0);
+    if (musicOffset > 0.01) {
+      args.push('-ss', String(musicOffset));
+    }
+    // Loop short beds; -shortest caps to video length later.
+    args.push('-stream_loop', '-1', '-i', options.musicPath);
+  } else if (recipe.soundMode === 'mute') {
+    args.push(
+      '-f',
+      'lavfi',
+      '-i',
+      'anullsrc=channel_layout=stereo:sample_rate=48000'
+    );
+  }
+
+  if (trimDuration != null) {
+    args.push('-t', String(trimDuration));
+  }
+
+  if (cropVf) {
+    args.push('-vf', cropVf);
+  }
+
+  args.push(
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '18',
+    '-pix_fmt',
+    'yuv420p'
+  );
+
+  if (recipe.soundMode === 'mute') {
+    args.push(
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-ac',
+      '2',
+      '-ar',
+      '48000',
+      '-shortest'
+    );
+  } else if (recipe.soundMode === 'file') {
+    args.push(
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-ac',
+      '2',
+      '-ar',
+      '48000',
+      '-shortest'
+    );
+  } else {
+    // keep original audio (re-encode for reliable trim/crop sync)
+    args.push('-c:a', 'aac', '-b:a', '192k', '-ac', '2', '-ar', '48000');
+  }
+
+  args.push('-movflags', '+faststart', outPath);
+
+  console.log(
+    `[Export] preprocess editRecipe sound=${recipe.soundMode}` +
+      (cropVf ? ' crop' : '') +
+      (recipe.trim ? ` trim=${trimStart.toFixed(2)}+${(trimDuration ?? 0).toFixed(2)}s` : '')
+  );
+
+  await runFfmpeg(args);
+  return { inputPath: outPath, cleanupPath: outPath };
+}
+
 async function exportOneSegment(options: {
   inputPath: string;
   preset: ExportPreset;
@@ -594,43 +738,61 @@ export async function exportWhatsAppHdSegments(
     process.env.FFPROBE_PATH = ffprobePath.path;
   }
 
-  const probe = await probeInput(options.inputPath);
-  const preset = chooseExportPreset(options.preset, probe);
-  const baseProfile = table[preset];
-  if (!baseProfile) {
-    throw new HttpError(400, 'preset must be 720p or 1080p');
-  }
-  const x264Preset = resolveX264Preset(options.x264Preset);
-  const profile: EncodeProfile = { ...baseProfile, x264Preset };
+  let workPath = options.inputPath;
+  let cleanupPath: string | undefined;
+  try {
+    const sourceProbe = await probeInput(options.inputPath);
+    const pre = await preprocessEditRecipe({
+      inputPath: options.inputPath,
+      editRecipe: options.editRecipe,
+      musicPath: options.musicPath,
+      sourceDurationSec: sourceProbe?.durationSec,
+    });
+    workPath = pre.inputPath;
+    cleanupPath = pre.cleanupPath;
 
-  const durationSec = probe?.durationSec || options.statusLengthSec;
-  const segments = buildExportSegments(durationSec, options.statusLengthSec);
-  const jobId = randomUUID();
+    const probe = await probeInput(workPath);
+    const preset = chooseExportPreset(options.preset, probe);
+    const baseProfile = table[preset];
+    if (!baseProfile) {
+      throw new HttpError(400, 'preset must be 720p or 1080p');
+    }
+    const x264Preset = resolveX264Preset(options.x264Preset);
+    const profile: EncodeProfile = { ...baseProfile, x264Preset };
 
-  console.log(
-    `[Export] ${segments.length} segment(s) ${preset} x264=${x264Preset} from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
-  );
+    const durationSec = probe?.durationSec || options.statusLengthSec;
+    const segments = buildExportSegments(durationSec, options.statusLengthSec);
+    const jobId = randomUUID();
 
-  const results: ExportResult[] = [];
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i];
-    results.push(
-      await exportOneSegment({
-        inputPath: options.inputPath,
-        preset,
-        statusLengthSec: options.statusLengthSec,
-        delivery,
-        profile,
-        probe,
-        jobId,
-        startSec: seg.startSec,
-        lengthSec: seg.lengthSec,
-        partIndex: i,
-        partCount: segments.length,
-      })
+    console.log(
+      `[Export] ${segments.length} segment(s) ${preset} x264=${x264Preset} from ${durationSec.toFixed(1)}s source (chunk=${options.statusLengthSec}s)`
     );
+
+    const results: ExportResult[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      results.push(
+        await exportOneSegment({
+          inputPath: workPath,
+          preset,
+          statusLengthSec: options.statusLengthSec,
+          delivery,
+          profile,
+          probe,
+          jobId,
+          startSec: seg.startSec,
+          lengthSec: seg.lengthSec,
+          partIndex: i,
+          partCount: segments.length,
+        })
+      );
+    }
+    return results;
+  } finally {
+    if (cleanupPath) {
+      await fsPromises.unlink(cleanupPath).catch(() => undefined);
+    }
   }
-  return results;
 }
 
 export async function getUploadsDir(): Promise<string> {

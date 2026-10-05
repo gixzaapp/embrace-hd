@@ -25,7 +25,7 @@ export const ENCODE_QUALITY_OPTIONS: EncodeQualityOption[] = [
   {
     id: 'slow',
     title: 'Slow',
-    subtitle: 'Super Quality',
+    subtitle: 'Finest Quality',
     timeFactor: 2.5,
   },
 ];

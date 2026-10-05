@@ -12,8 +12,9 @@
   box-shadow: inset 0 0 0 1px rgba(75, 226, 119, 0.12);
 }
 
-.trial-banner--locked {
-  border-color: rgba(255, 180, 171, 0.35);
+.trial-banner--free {
+  border-color: rgba(75, 226, 119, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(75, 226, 119, 0.08);
 }
 
 .trial-banner-eyebrow {
@@ -32,8 +33,8 @@
   color: var(--eh-on-surface);
 }
 
-.trial-banner--locked .trial-banner-title {
-  color: var(--eh-error);
+.trial-banner--free .trial-banner-title {
+  color: var(--eh-on-surface);
 }
 
 .trial-banner-body {

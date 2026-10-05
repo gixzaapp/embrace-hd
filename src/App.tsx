@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { IonApp, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
+import { clearEmbraceHdMediaCache, resetWorkingMediaForAppLaunch } from './services';
 import { AppTabs, AppUpdateSnackbar, AuthProvider, BackButtonExit, TrialProvider } from './ui';
 
 /* Core CSS required for Ionic components to work properly */
@@ -30,18 +32,25 @@ setupIonicReact({
   hardwareBackButton: false,
 });
 
-const App: React.FC = () => (
-  <IonApp>
-    <AuthProvider>
-      <TrialProvider>
-        <IonReactRouter>
-          <AppTabs />
-          <BackButtonExit />
-        </IonReactRouter>
-        <AppUpdateSnackbar />
-      </TrialProvider>
-    </AuthProvider>
-  </IonApp>
-);
+const App: React.FC = () => {
+  useEffect(() => {
+    resetWorkingMediaForAppLaunch();
+    void clearEmbraceHdMediaCache();
+  }, []);
+
+  return (
+    <IonApp>
+      <AuthProvider>
+        <TrialProvider>
+          <IonReactRouter>
+            <AppTabs />
+            <BackButtonExit />
+          </IonReactRouter>
+          <AppUpdateSnackbar />
+        </TrialProvider>
+      </AuthProvider>
+    </IonApp>
+  );
+};
 
 export default App;

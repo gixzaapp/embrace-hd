@@ -21,6 +21,16 @@ export async function getUserById(id: string): Promise<AuthUser | null> {
   return usersRepo.getById(id);
 }
 
+export async function countUsers(): Promise<number> {
+  return usersRepo.count();
+}
+
+export async function listRecentUserNames(limit = 10): Promise<
+  Array<{ name: string; createdAt: string }>
+> {
+  return usersRepo.listRecent(limit);
+}
+
 export async function upsertUserForAuth(options: {
   phoneE164: string;
   name?: string;

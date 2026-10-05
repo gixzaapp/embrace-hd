@@ -114,6 +114,15 @@ export const env = {
    * Used to allowlist downloadUrl hosts (SSRF protection).
    */
   uploadGatewayPublicUrl: process.env.UPLOAD_GATEWAY_PUBLIC_URL?.trim() ?? '',
+  /**
+   * Shared secret for Slack GET ops endpoints (header X-Slack-Secret).
+   */
+  slackApiSecret: process.env.SLACK_API_SECRET?.trim() ?? '',
+  /**
+   * Slack App → Basic Information → Signing Secret.
+   * Required for POST /v1/slack/commands (slash commands).
+   */
+  slackSigningSecret: process.env.SLACK_SIGNING_SECRET?.trim() ?? '',
 };
 
 /** null = do not override DB; boolean = force that value */
