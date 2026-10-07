@@ -124,3 +124,12 @@ body {
   color: var(--eh-on-surface);
   font-family: var(--eh-font);
 }
+
+html.plt-ios,
+html.plt-ios body {
+  overscroll-behavior: none;
+}
+
+html.plt-ios ion-content::part(scroll) {
+  overscroll-behavior-y: none;
+}

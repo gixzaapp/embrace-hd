@@ -12,6 +12,9 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: true,
   },
+  ios: {
+    scrollEnabled: false,
+  },
   plugins: {
     SplashScreen: {
       launchAutoHide: true,
