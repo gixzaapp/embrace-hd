@@ -70,10 +70,15 @@ async function uriToBlob(uri: string): Promise<Blob> {
     : local;
 
   const res = await fetch(src);
-  if (!res.ok) {
+  // iOS serves local .mp4/.mov/.mp3 with a non-HTTP response, so status is 0.
+  if (!res.ok && res.status !== 0) {
     throw new Error('Could not read video for upload');
   }
-  return res.blob();
+  const blob = await res.blob();
+  if (blob.size === 0) {
+    throw new Error('Could not read video for upload');
+  }
+  return blob;
 }
 
 let editRecipeSupportCache:
