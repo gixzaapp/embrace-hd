@@ -142,6 +142,7 @@ export class VideoEngine {
           deliveredVia: 'whatsapp',
           outputUri: undefined,
           editsDropped: result.editsDropped,
+          previewLocalUris: result.previewLocalUris,
         };
       }
 

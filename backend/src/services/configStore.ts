@@ -21,15 +21,29 @@ const DEFAULT_CONFIG: AppConfig = {
     showUnlockPremium: false,
     /** New servers advertise Edit-recipe Convert support for clients. */
     editRecipe: true,
+    /** In-app preview of the converted video, in addition to WhatsApp. */
+    convertPreview: true,
   },
   minAppVersion: '0.1.0',
   updatedAt: new Date().toISOString(),
 };
 
 /** Apply ADS_ENABLED env override when set (takes precedence over DB). */
-function withAdsOverride(config: AppConfig): AppConfig {
-  if (env.adsEnabledOverride === null) return config;
-  return { ...config, adsEnabled: env.adsEnabledOverride };
+function withRuntimeOverrides(config: AppConfig): AppConfig {
+  let next = config;
+  if (env.adsEnabledOverride !== null) {
+    next = { ...next, adsEnabled: env.adsEnabledOverride };
+  }
+  if (env.convertPreviewOverride !== null) {
+    next = {
+      ...next,
+      featureFlags: {
+        ...next.featureFlags,
+        convertPreview: env.convertPreviewOverride,
+      },
+    };
+  }
+  return next;
 }
 
 /** Ensure the local data dir exists (used for file storage + video exports). */
@@ -40,15 +54,19 @@ export async function ensureDataDir(): Promise<void> {
 export async function getAppConfig(): Promise<AppConfig> {
   const stored = await configRepo.get();
   if (!stored) {
-    const seeded = withAdsOverride({ ...DEFAULT_CONFIG });
+    const seeded = withRuntimeOverrides({ ...DEFAULT_CONFIG });
     await configRepo.put({
       ...seeded,
-      // Persist DB default without baking a temporary env kill-switch into storage
+      // Persist DB defaults without baking a temporary env kill-switch into storage
       adsEnabled: DEFAULT_CONFIG.adsEnabled,
+      featureFlags: {
+        ...seeded.featureFlags,
+        convertPreview: DEFAULT_CONFIG.featureFlags.convertPreview,
+      },
     });
     return seeded;
   }
-  return withAdsOverride({
+  return withRuntimeOverrides({
     ...DEFAULT_CONFIG,
     ...stored,
     products: { ...DEFAULT_CONFIG.products, ...stored.products },

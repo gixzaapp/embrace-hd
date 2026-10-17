@@ -14,6 +14,7 @@ import {
 } from './exportVideo.js';
 import { deliverExportVideoToWhatsApp } from './whatsappMedia.js';
 import { pullGatewayVideo } from './uploadGateway.js';
+import { getAppConfig } from './configStore.js';
 import {
   isConversationWindowOpen,
   type AuthUser,
@@ -162,18 +163,81 @@ async function persist(job: ExportJob): Promise<void> {
   }
 }
 
-/** Public poll payload — never exposes a download URL for WhatsApp delivery. */
-export function publicExportJob(job: ExportJob): Omit<
-  ExportJob,
-  'downloadPath' | 'editRecipe' | 'musicPath'
-> & {
-  downloadPath?: undefined;
-} {
-  const { downloadPath: _d, editRecipe: _e, musicPath: _m, ...rest } = job;
-  return {
+const PREVIEW_TTL_MS = 30 * 60 * 1000;
+
+/** Filenames this server wrote. Rejects anything that could escape the exports dir. */
+export function previewFilenames(job: ExportJob): string[] {
+  if (!job.filename) return [];
+  const names: string[] = [];
+  for (const raw of job.filename.split(',')) {
+    const name = raw.trim();
+    if (!name || path.basename(name) !== name) continue;
+    if (!/^[\w.-]+\.mp4$/.test(name)) continue;
+    names.push(name);
+  }
+  return names;
+}
+
+function schedulePreviewCleanup(names: string[]): void {
+  const timer = setTimeout(() => {
+    for (const name of names) {
+      void fs.unlink(getExportPath(name)).catch(() => undefined);
+    }
+  }, PREVIEW_TTL_MS);
+  timer.unref?.();
+}
+
+/** Public poll payload — never exposes a download URL or filesystem path. */
+export async function publicExportJob(job: ExportJob): Promise<
+  Omit<ExportJob, 'downloadPath' | 'editRecipe' | 'musicPath' | 'filename'> & {
+    downloadPath?: undefined;
+    filename?: undefined;
+    previewPartCount?: number;
+  }
+> {
+  const { downloadPath: _d, editRecipe: _e, musicPath: _m, filename: _f, ...rest } =
+    job;
+  const payload = {
     ...rest,
     deliveredVia: job.deliveredVia ?? (job.downloadPath ? 'download' : 'whatsapp'),
   };
+
+  if (job.status !== 'done') return payload;
+
+  const config = await getAppConfig();
+  if (config.featureFlags.convertPreview === false) return payload;
+
+  const names = previewFilenames(job);
+  let existing = 0;
+  for (const name of names) {
+    try {
+      await fs.access(getExportPath(name));
+      existing += 1;
+    } catch {
+      // already cleaned up
+    }
+  }
+  if (!existing) return payload;
+  return { ...payload, previewPartCount: existing };
+}
+
+export async function previewFileForPart(
+  job: ExportJob,
+  part: number
+): Promise<string | null> {
+  const config = await getAppConfig();
+  if (config.featureFlags.convertPreview === false) return null;
+  if (job.status !== 'done' || !Number.isInteger(part) || part < 1) return null;
+  const names = previewFilenames(job);
+  const name = names[part - 1];
+  if (!name) return null;
+  const filePath = getExportPath(name);
+  try {
+    await fs.access(filePath);
+  } catch {
+    return null;
+  }
+  return filePath;
 }
 
 export async function getExportJob(jobId: string): Promise<ExportJob | null> {
@@ -386,12 +450,20 @@ async function runExportJob(
     if (musicPath) {
       await fs.unlink(musicPath).catch(() => undefined);
     }
-    for (const p of outputPaths) {
-      await fs.unlink(p).catch(() => undefined);
-    }
-    if (job.filename) {
-      for (const name of job.filename.split(',')) {
-        await fs.unlink(getExportPath(name.trim())).catch(() => undefined);
+
+    const config = await getAppConfig().catch(() => null);
+    const keepPreview =
+      job.status === 'done' && config?.featureFlags.convertPreview !== false;
+    const names = previewFilenames(job);
+
+    if (keepPreview && names.length) {
+      schedulePreviewCleanup(names);
+    } else {
+      for (const p of outputPaths) {
+        await fs.unlink(p).catch(() => undefined);
+      }
+      for (const name of names) {
+        await fs.unlink(getExportPath(name)).catch(() => undefined);
       }
     }
   }

@@ -103,7 +103,12 @@ export const env = {
    * Master AdMob switch. When set, overrides app_config.adsEnabled from the DB.
    * unset → use DB / default; false/0/off → ads off; true/1/on → ads on.
    */
-  adsEnabledOverride: parseAdsEnabledOverride(process.env.ADS_ENABLED),
+  adsEnabledOverride: parseOptionalBool(process.env.ADS_ENABLED),
+  /**
+   * In-app convert preview. When set, overrides featureFlags.convertPreview.
+   * unset → use DB / default (on); false/0/off → preview off; true/1/on → preview on.
+   */
+  convertPreviewOverride: parseOptionalBool(process.env.CONVERT_PREVIEW),
   /**
    * Shared secret with the Cloudflare upload gateway (X-Internal-Secret).
    * Required for POST /v1/export/remote and for pulling videos from the gateway.
@@ -126,7 +131,7 @@ export const env = {
 };
 
 /** null = do not override DB; boolean = force that value */
-function parseAdsEnabledOverride(raw: string | undefined): boolean | null {
+function parseOptionalBool(raw: string | undefined): boolean | null {
   const v = raw?.trim().toLowerCase();
   if (!v) return null;
   if (v === 'false' || v === '0' || v === 'off' || v === 'no') return false;

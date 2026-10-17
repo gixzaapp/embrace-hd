@@ -18,6 +18,7 @@ import {
   isBackendEnabled,
   openBusinessWhatsAppChat,
   pickStatusMedia,
+  shareMedia,
   videoGeneratorService,
   type ConvertPhase,
   type EncodeQualityChoice,
@@ -89,6 +90,7 @@ const Home: React.FC = () => {
   const contentRef = useRef<HTMLIonContentElement>(null);
   const convertAnchorRef = useRef<HTMLDivElement>(null);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
+  const [previewUris, setPreviewUris] = useState<string[]>([]);
   const [activateOpen, setActivateOpen] = useState(false);
   const [activateBusy, setActivateBusy] = useState(false);
   const [activateTarget, setActivateTarget] = useState<{
@@ -410,7 +412,10 @@ const Home: React.FC = () => {
         setConvertOpen(false);
       }
 
-      void clearGalleryLibrary(exported.galleryItem?.id).catch((err) => {
+      const keepIds = exported.previewIds?.length
+        ? exported.previewIds
+        : exported.galleryItem?.id;
+      void clearGalleryLibrary(keepIds).catch((err) => {
         console.warn('[Home] clear Library gallery failed', err);
       });
 
@@ -422,12 +427,15 @@ const Home: React.FC = () => {
 
       if (!convertDismissedEarlyRef.current) {
         if (exported.deliveredVia === 'whatsapp') {
+          setPreviewUris(exported.previewUris ?? []);
           setDeliveredOpen(true);
           setToast({
             open: true,
-            message: exported.editsDropped
-              ? 'Sent — check WhatsApp (server update needed for crop/trim/sound)'
-              : 'Sent — check your WhatsApp',
+            message: exported.previewUris?.length
+              ? 'Preview ready — the video was also sent to WhatsApp'
+              : exported.editsDropped
+                ? 'Sent — check WhatsApp (server update needed for crop/trim/sound)'
+                : 'Sent — check your WhatsApp',
           });
         } else {
           setToast({
@@ -544,7 +552,23 @@ const Home: React.FC = () => {
 
         <WhatsAppDeliveredModal
           open={deliveredOpen}
-          onDismiss={() => setDeliveredOpen(false)}
+          previewUris={previewUris}
+          onSave={async (uri) => {
+            try {
+              await shareMedia({
+                title: 'HD Status preview',
+                files: [uri],
+                dialogTitle: 'Save video',
+              });
+            } catch (err) {
+              console.warn('[Home] save preview failed', err);
+              setToast({ open: true, message: 'Could not open Save' });
+            }
+          }}
+          onDismiss={() => {
+            setDeliveredOpen(false);
+            setPreviewUris([]);
+          }}
         />
 
         <WhatsAppActivateModal

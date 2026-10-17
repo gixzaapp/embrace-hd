@@ -19,6 +19,11 @@ export type AppConfig = {
      * Missing/false = older servers; clients should omit editRecipe or fall back.
      */
     editRecipe?: boolean;
+    /**
+     * After WhatsApp delivery, keep the file briefly so the app can
+     * download and preview it. Missing/false = WhatsApp only.
+     */
+    convertPreview?: boolean;
   };
   minAppVersion: string;
   updatedAt: string;

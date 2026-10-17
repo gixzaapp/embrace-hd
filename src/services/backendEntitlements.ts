@@ -17,6 +17,8 @@ export type RemoteAppConfig = {
     showUnlockPremium: boolean;
     /** Present on new backends that apply crop/trim/sound during Convert. */
     editRecipe?: boolean;
+    /** In-app preview of the converted video, in addition to WhatsApp. */
+    convertPreview?: boolean;
   };
   minAppVersion: string;
   updatedAt: string;

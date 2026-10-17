@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import { getApiBaseUrl, isBackendEnabled, ApiError } from './apiClient';
 import { ensureLocalMediaFile } from './localMediaPath';
 import type { HdPresetChoice, HdPresetKey, StatusLengthSec } from '../core';
@@ -44,6 +45,8 @@ export type BackendExportResult = {
   engine: 'backend-ffmpeg';
   /** True when edits were requested but the server/path could not apply them. */
   editsDropped?: boolean;
+  /** Local file URIs when the server kept a preview copy. */
+  previewLocalUris?: string[];
 };
 
 function getUploadGatewayUrl(): string | null {
@@ -219,6 +222,20 @@ export async function exportViaBackend(
   report(request, 'convert', 1);
 
   report(request, 'send', 0);
+  let previewLocalUris: string[] | undefined;
+  if (job.previewPartCount && job.previewPartCount > 0) {
+    try {
+      previewLocalUris = await downloadPreviewParts(
+        base,
+        accepted.jobId,
+        job.previewPartCount,
+        request
+      );
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      console.warn('[Export] preview download failed — WhatsApp delivery still stands', err);
+    }
+  }
   report(request, 'send', 1);
 
   return {
@@ -232,6 +249,7 @@ export async function exportViaBackend(
     sizeBytes: job.sizeBytes || 0,
     engine: 'backend-ffmpeg',
     editsDropped: editsDropped || undefined,
+    previewLocalUris,
   };
 }
 
@@ -604,7 +622,71 @@ type ExportJobPollResponse = {
   preset?: HdPresetChoice;
   statusLengthSec?: StatusLengthSec;
   sizeBytes?: number;
+  /** Set when the server kept the file for an in-app preview. */
+  previewPartCount?: number;
 };
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunk = 0x8000;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunk) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + chunk)));
+  }
+  return btoa(parts.join(''));
+}
+
+async function downloadPreviewParts(
+  base: string,
+  jobId: string,
+  partCount: number,
+  request: BackendExportRequest
+): Promise<string[]> {
+  const uris: string[] = [];
+  for (let part = 1; part <= partCount; part += 1) {
+    if (request.signal?.aborted) {
+      throw new DOMException('Export cancelled', 'AbortError');
+    }
+    report(request, 'send', part / (partCount + 1));
+    const res = await fetch(
+      `${base}/v1/export/jobs/${encodeURIComponent(jobId)}/preview/${part}`,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${request.authToken}` },
+        signal: request.signal,
+      }
+    );
+    if (!res.ok) {
+      throw new Error(`Preview download failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    if (blob.size === 0) {
+      throw new Error('Preview download was empty');
+    }
+
+    if (!Capacitor.isNativePlatform()) {
+      uris.push(URL.createObjectURL(blob));
+      continue;
+    }
+
+    const relativePath = `EmbraceHD/preview_${jobId}_p${part}.mp4`;
+    await Filesystem.mkdir({
+      path: 'EmbraceHD',
+      directory: Directory.Cache,
+      recursive: true,
+    }).catch(() => undefined);
+    await Filesystem.writeFile({
+      path: relativePath,
+      data: bytesToBase64(new Uint8Array(await blob.arrayBuffer())),
+      directory: Directory.Cache,
+    });
+    const saved = await Filesystem.getUri({
+      path: relativePath,
+      directory: Directory.Cache,
+    });
+    uris.push(saved.uri);
+  }
+  return uris;
+}
 
 async function pollExportJob(
   base: string,

@@ -35,6 +35,8 @@ export type RenderJob = {
   watermarkApplied?: boolean;
   /** Backend could not apply crop/trim/sound (older server) — converted original. */
   editsDropped?: boolean;
+  /** Local copies downloaded for in-app preview (WhatsApp delivery still happened). */
+  previewLocalUris?: string[];
 };
 
 export type StatusExportOptions = {

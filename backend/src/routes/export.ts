@@ -9,6 +9,7 @@ import {
   enqueueExportJob,
   enqueueRemoteExportJob,
   getExportJob,
+  previewFileForPart,
   publicExportJob,
 } from '../services/exportJobs.js';
 import {
@@ -340,7 +341,37 @@ exportRouter.get('/jobs/:jobId', requireAuth, async (req, res, next) => {
     if (job.userId && authed.authUser && job.userId !== authed.authUser.id) {
       throw new HttpError(404, 'Export job not found');
     }
-    res.json(publicExportJob(job));
+    res.json(await publicExportJob(job));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /v1/export/jobs/:jobId/preview/:part
+ * Authenticated copy of a finished export, only while convertPreview is on.
+ * Part is 1-based. WhatsApp delivery is unchanged.
+ */
+exportRouter.get('/jobs/:jobId/preview/:part', requireAuth, async (req, res, next) => {
+  try {
+    const job = await getExportJob(req.params.jobId);
+    if (!job) {
+      throw new HttpError(404, 'Export job not found');
+    }
+    const authed = req as AuthedRequest;
+    if (job.userId && authed.authUser && job.userId !== authed.authUser.id) {
+      throw new HttpError(404, 'Export job not found');
+    }
+    const part = Number(req.params.part);
+    const filePath = await previewFileForPart(job, part);
+    if (!filePath) {
+      throw new HttpError(404, 'Preview is not available');
+    }
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Cache-Control', 'private, no-store');
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', (err) => next(err));
+    stream.pipe(res);
   } catch (err) {
     next(err);
   }

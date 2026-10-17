@@ -198,12 +198,15 @@ export async function deleteGalleryItem(id: string): Promise<void> {
  * Remove Edit/Saved videos from the gallery index (and files on device).
  * Optionally keep one item (e.g. the just-converted HD export in local mode).
  */
-export async function clearGalleryLibrary(keepId?: string): Promise<void> {
+export async function clearGalleryLibrary(keepId?: string | string[]): Promise<void> {
+  const keep = new Set(
+    keepId == null ? [] : Array.isArray(keepId) ? keepId : [keepId]
+  );
   const items = await readIndex();
   const kept: GalleryItem[] = [];
 
   for (const item of items) {
-    if (keepId && item.id === keepId) {
+    if (keep.has(item.id)) {
       kept.push(item);
       continue;
     }

@@ -125,6 +125,9 @@ export class VideoGeneratorService {
     deliveredVia: 'whatsapp' | 'file';
     outputUri?: string;
     galleryItem?: GalleryItem;
+    /** Local preview copies when the server flag is on. WhatsApp still receives the video. */
+    previewUris?: string[];
+    previewIds?: string[];
     editsDropped?: boolean;
   }> {
     const statusLengthSec = options.statusLengthSec ?? appConfig.defaults.statusLengthSec;
@@ -169,11 +172,32 @@ export class VideoGeneratorService {
     }
 
     if (job.deliveredVia === 'whatsapp') {
+      const previewUris: string[] = [];
+      const previewIds: string[] = [];
+      let galleryItem: GalleryItem | undefined;
+      for (const uri of job.previewLocalUris ?? []) {
+        try {
+          const saved = await saveExportToGallery({
+            sourceUri: uri,
+            title: project.title,
+            statusLengthSec,
+          });
+          previewUris.push(saved.uri);
+          previewIds.push(saved.id);
+          galleryItem ??= saved;
+        } catch (err) {
+          console.warn('[Export] could not save preview copy', err);
+        }
+      }
       return {
         projectId: project.id,
         statusLengthSec,
         title: project.title,
         deliveredVia: 'whatsapp',
+        outputUri: galleryItem?.uri,
+        galleryItem,
+        previewUris: previewUris.length ? previewUris : undefined,
+        previewIds: previewIds.length ? previewIds : undefined,
         editsDropped: job.editsDropped,
       };
     }
