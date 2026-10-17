@@ -15,3 +15,19 @@ export const APP = {
   tagline: 'HD Video Generator — WhatsApp Ready',
   id: 'uk.co.embraceapp.app',
 } as const;
+
+/**
+ * In-app preview of the converted video.
+ * The backend convertPreview flag must also be on. Android stays WhatsApp-only.
+ */
+export const CONVERT_PREVIEW_PLATFORMS = {
+  ios: true,
+  android: false,
+  web: false,
+} as const;
+
+export function isConvertPreviewEnabled(platform: string): boolean {
+  if (platform === 'ios') return CONVERT_PREVIEW_PLATFORMS.ios;
+  if (platform === 'android') return CONVERT_PREVIEW_PLATFORMS.android;
+  return CONVERT_PREVIEW_PLATFORMS.web;
+}

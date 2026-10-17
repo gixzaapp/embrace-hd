@@ -2,7 +2,12 @@ import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { getApiBaseUrl, isBackendEnabled, ApiError } from './apiClient';
 import { ensureLocalMediaFile } from './localMediaPath';
-import type { HdPresetChoice, HdPresetKey, StatusLengthSec } from '../core';
+import {
+  isConvertPreviewEnabled,
+  type HdPresetChoice,
+  type HdPresetKey,
+  type StatusLengthSec,
+} from '../core';
 import type { EncodeQualityChoice } from './encodeQuality';
 import {
   hasMeaningfulEditRecipe,
@@ -223,7 +228,11 @@ export async function exportViaBackend(
 
   report(request, 'send', 0);
   let previewLocalUris: string[] | undefined;
-  if (job.previewPartCount && job.previewPartCount > 0) {
+  if (
+    isConvertPreviewEnabled(Capacitor.getPlatform()) &&
+    job.previewPartCount &&
+    job.previewPartCount > 0
+  ) {
     try {
       previewLocalUris = await downloadPreviewParts(
         base,
