@@ -10,6 +10,7 @@ import {
 import { IonToast } from '@ionic/react';
 import { ApiError } from '../services/apiClient';
 import {
+  deleteAccountAuth,
   fetchAuthMe,
   logoutAuth,
   lookupPhone,
@@ -41,6 +42,7 @@ type AuthContextValue = {
   }) => Promise<RequestOtpResponse>;
   verifyOtp: (options: { phone: string; code: string }) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshMe: () => Promise<void>;
 };
 
@@ -151,6 +153,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setSession(null);
   }, [session?.token]);
 
+  const deleteAccount = useCallback(async () => {
+    if (!session?.token) {
+      throw new ApiError('Sign in again to delete this account', 401);
+    }
+    await deleteAccountAuth(session.token);
+    await clearAuthSession();
+    setSession(null);
+  }, [session?.token]);
+
   const refreshMe = useCallback(async () => {
     if (!session?.token) return;
     try {
@@ -188,9 +199,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       requestOtp,
       verifyOtp,
       logout,
+      deleteAccount,
       refreshMe,
     }),
-    [session, loading, lookupPhoneNumber, requestOtp, verifyOtp, logout, refreshMe]
+    [session, loading, lookupPhoneNumber, requestOtp, verifyOtp, logout, deleteAccount, refreshMe]
   );
 
   return (

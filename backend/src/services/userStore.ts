@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { env } from '../config/env.js';
 import type { AuthUser } from '../types.js';
-import { usersRepo } from '../storage/repositories.js';
+import { getPool } from '../storage/postgres.js';
+import {
+  otpsRepo,
+  sessionsRepo,
+  userTrialsRepo,
+  usersRepo,
+} from '../storage/repositories.js';
+import { clearOtpRequestLog } from './otpRateLimit.js';
+import { phoneLookupHash } from './phoneCrypto.js';
 
 export type { AuthUser };
 
@@ -104,6 +113,38 @@ export function isConversationWindowOpen(
   const t = new Date(lastInboundWhatsAppAt).getTime();
   if (Number.isNaN(t)) return false;
   return Date.now() - t < CONVERSATION_WINDOW_MS;
+}
+
+/**
+ * Permanently remove the account and the personal data stored for it:
+ * user row, sessions, trial binding, pending OTP, and OTP request log.
+ */
+export async function deleteAccount(user: AuthUser): Promise<void> {
+  if (env.storageDriver === 'postgres') {
+    const lookup = phoneLookupHash(user.phoneE164);
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM otps WHERE phone_lookup = $1', [lookup]);
+      await client.query('DELETE FROM otp_request_log WHERE phone_lookup = $1', [
+        lookup,
+      ]);
+      await client.query('DELETE FROM users WHERE id = $1', [user.id]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+    return;
+  }
+
+  await otpsRepo.delete(user.phoneE164);
+  await clearOtpRequestLog(user.phoneE164);
+  await sessionsRepo.deleteByUserId(user.id);
+  await userTrialsRepo.delete(user.id);
+  await usersRepo.delete(user.id);
 }
 
 export function publicUser(user: AuthUser) {

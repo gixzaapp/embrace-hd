@@ -65,6 +65,32 @@ export async function ddbDelete(pk: string, sk: string): Promise<void> {
   );
 }
 
+/** Scan matching items and delete them. Used when there is no user-id index. */
+export async function ddbDeleteWhere(options: {
+  filterExpression: string;
+  expressionAttributeValues: Record<string, unknown>;
+}): Promise<void> {
+  let startKey: Record<string, unknown> | undefined;
+  do {
+    const out = await ddb().send(
+      new ScanCommand({
+        TableName: tableName(),
+        FilterExpression: options.filterExpression,
+        ExpressionAttributeValues: options.expressionAttributeValues,
+        ExclusiveStartKey: startKey,
+      })
+    );
+    for (const item of out.Items ?? []) {
+      const pk = item.pk;
+      const sk = item.sk;
+      if (typeof pk === 'string' && typeof sk === 'string') {
+        await ddbDelete(pk, sk);
+      }
+    }
+    startKey = out.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (startKey);
+}
+
 export async function ddbQueryByGsi1<T>(gsi1pk: string): Promise<T[]> {
   const out = await ddb().send(
     new QueryCommand({

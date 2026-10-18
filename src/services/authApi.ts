@@ -87,6 +87,16 @@ export async function fetchAuthMe(token: string): Promise<{ user: AuthUser }> {
   });
 }
 
+export async function deleteAccountAuth(token: string): Promise<void> {
+  requireBackend();
+  await apiFetch<{ ok: boolean }>('/v1/auth/account', {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
 export async function logoutAuth(token: string): Promise<void> {
   requireBackend();
   try {

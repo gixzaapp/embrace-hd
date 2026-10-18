@@ -12,6 +12,7 @@ import type {
 import { createFileCollection } from './fileCollection.js';
 import {
   ddbDelete,
+  ddbDeleteWhere,
   ddbGet,
   ddbPut,
   ddbQueryByGsi1,
@@ -150,6 +151,7 @@ export interface UsersRepo {
   getById(id: string): Promise<AuthUser | null>;
   findByPhone(phoneE164: string): Promise<AuthUser | null>;
   put(user: AuthUser): Promise<void>;
+  delete(id: string): Promise<void>;
   count(): Promise<number>;
   /** Newest users first (by createdAt). Names may be placeholders. */
   listRecent(limit: number): Promise<RecentUserName[]>;
@@ -197,6 +199,9 @@ const fileUsersRepo = (): UsersRepo => {
     async put(user) {
       await c.put(user.id, toStoredUser(user));
     },
+    async delete(id) {
+      await c.delete(id);
+    },
     async count() {
       const all = await c.values();
       return all.length;
@@ -233,6 +238,9 @@ const dynamoUsersRepo = (): UsersRepo => ({
       gsi1pk: `PHONE#${stored.phoneLookup}`,
       ...stored,
     });
+  },
+  async delete(id) {
+    await ddbDelete(`USER#${id}`, 'USER');
   },
   async count() {
     const items = await ddbScanUsers<StoredUser>();
@@ -289,6 +297,9 @@ const postgresUsersRepo = (): UsersRepo => ({
         stored.updatedAt,
       ]
     );
+  },
+  async delete(id) {
+    await query('DELETE FROM users WHERE id = $1', [id]);
   },
   async count() {
     const { rows } = await query<{ count: string }>(
@@ -455,6 +466,7 @@ export interface SessionsRepo {
   get(token: string): Promise<SessionRecord | null>;
   put(record: SessionRecord): Promise<void>;
   delete(token: string): Promise<void>;
+  deleteByUserId(userId: string): Promise<void>;
 }
 
 function mapSessionRow(row: {
@@ -477,6 +489,12 @@ const fileSessionsRepo = (): SessionsRepo => {
     get: (token) => c.get(token),
     put: (record) => c.put(record.token, record),
     delete: (token) => c.delete(token),
+    async deleteByUserId(userId) {
+      const all = await c.values();
+      for (const session of all) {
+        if (session.userId === userId) await c.delete(session.token);
+      }
+    },
   };
 };
 
@@ -491,6 +509,11 @@ const dynamoSessionsRepo = (): SessionsRepo => ({
     });
   },
   delete: (token) => ddbDelete(`SESSION#${token}`, 'SESSION'),
+  deleteByUserId: (userId) =>
+    ddbDeleteWhere({
+      filterExpression: 'sk = :sk AND userId = :uid',
+      expressionAttributeValues: { ':sk': 'SESSION', ':uid': userId },
+    }),
 });
 
 const postgresSessionsRepo = (): SessionsRepo => ({
@@ -515,6 +538,9 @@ const postgresSessionsRepo = (): SessionsRepo => ({
   },
   async delete(token) {
     await query('DELETE FROM sessions WHERE token = $1', [token]);
+  },
+  async deleteByUserId(userId) {
+    await query('DELETE FROM sessions WHERE user_id = $1', [userId]);
   },
 });
 
@@ -600,6 +626,7 @@ export const trialsRepo: TrialsRepo =
 export interface UserTrialsRepo {
   get(userId: string): Promise<UserTrialRecord | null>;
   put(record: UserTrialRecord): Promise<void>;
+  delete(userId: string): Promise<void>;
 }
 
 function mapUserTrialRow(row: {
@@ -629,6 +656,7 @@ const fileUserTrialsRepo = (): UserTrialsRepo => {
       }
       await c.put(record.userId, record);
     },
+    delete: (userId) => c.delete(userId),
   };
 };
 
@@ -641,6 +669,7 @@ const dynamoUserTrialsRepo = (): UserTrialsRepo => ({
       ...record,
     });
   },
+  delete: (userId) => ddbDelete(`USER_TRIAL#${userId}`, 'USER_TRIAL'),
 });
 
 const postgresUserTrialsRepo = (): UserTrialsRepo => ({
@@ -666,6 +695,9 @@ const postgresUserTrialsRepo = (): UserTrialsRepo => ({
          END`,
       [record.userId, record.startDateIso, record.claimedAt]
     );
+  },
+  async delete(userId) {
+    await query('DELETE FROM user_trials WHERE user_id = $1', [userId]);
   },
 });
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { IonButton, IonContent, IonPage, IonToast } from '@ionic/react';
+import { IonAlert, IonButton, IonContent, IonPage, IonToast } from '@ionic/react';
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { ApiError } from '../services/apiClient';
 import {
   AppHeader,
   StatusLengthPicker,
@@ -19,7 +20,6 @@ import type { StatusLengthSec } from '../core';
 import packageJson from '../../package.json';
 import './Settings.css';
 
-const DELETE_ACCOUNT_URL = 'https://embraceapp.co.uk/delete-account.html';
 const FALLBACK_VERSION = packageJson.version || '1.0.0';
 
 const Settings: React.FC = () => {
@@ -28,7 +28,7 @@ const Settings: React.FC = () => {
     isSubscribed,
     showUnlockPremium,
   } = useTrial();
-  const { user, logout } = useAuth();
+  const { user, logout, deleteAccount } = useAuth();
   const [statusLengthSec, setStatusLengthSec] = useState<StatusLengthSec>(
     getPreferredStatusLength
   );
@@ -37,6 +37,8 @@ const Settings: React.FC = () => {
     message: '',
   });
   const [loggingOut, setLoggingOut] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [appVersion, setAppVersion] = useState(FALLBACK_VERSION);
 
   useEffect(() => {
@@ -57,12 +59,19 @@ const Settings: React.FC = () => {
     }
   };
 
-  const openDeleteAccountPage = () => {
-    if (Capacitor.isNativePlatform()) {
-      window.location.href = DELETE_ACCOUNT_URL;
-      return;
+  const runDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      await deleteAccount();
+    } catch (err) {
+      setToast({
+        open: true,
+        message:
+          err instanceof ApiError ? err.message : 'Could not delete account',
+      });
+    } finally {
+      setDeleting(false);
     }
-    window.open(DELETE_ACCOUNT_URL, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -87,7 +96,7 @@ const Settings: React.FC = () => {
                 fill="outline"
                 color="medium"
                 className="settings-logout-btn"
-                disabled={loggingOut}
+                disabled={loggingOut || deleting}
                 onClick={() => void handleLogout()}
               >
                 {loggingOut ? 'Signing out…' : 'Sign out'}
@@ -145,15 +154,32 @@ const Settings: React.FC = () => {
               fill="clear"
               color="danger"
               className="settings-delete-btn"
-              onClick={openDeleteAccountPage}
+              disabled={deleting || loggingOut}
+              onClick={() => setConfirmDelete(true)}
             >
-              Delete account
+              {deleting ? 'Deleting account…' : 'Delete account'}
             </IonButton>
             <p className="settings-hint settings-hint--tight">
-              Opens our website so you can request permanent account and data deletion.
+              Permanently deletes this account and signs you out.
             </p>
           </section>
         </div>
+
+        <IonAlert
+          isOpen={confirmDelete}
+          header="Delete account?"
+          message="This permanently deletes your Embrace HD account and the data stored for it, then signs you out. This cannot be undone. An App Store or Google Play subscription is not cancelled here."
+          buttons={[
+            { text: 'Cancel', role: 'cancel' },
+            { text: 'Continue', role: 'destructive' },
+          ]}
+          onDidDismiss={(ev) => {
+            setConfirmDelete(false);
+            if (ev.detail.role === 'destructive') {
+              void runDeleteAccount();
+            }
+          }}
+        />
 
         <IonToast
           className="eh-toast"

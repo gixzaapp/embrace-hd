@@ -115,6 +115,19 @@ export async function assertCanRequestOtp(phoneE164: string): Promise<void> {
   }
 }
 
+/** Drop OTP send history for a phone when its account is deleted. */
+export async function clearOtpRequestLog(phoneE164: string): Promise<void> {
+  const lookup = phoneLookupHash(phoneE164);
+  if (env.storageDriver === 'postgres') {
+    await query('DELETE FROM otp_request_log WHERE phone_lookup = $1', [lookup]);
+    return;
+  }
+  const store = await readFileStore();
+  if (!(lookup in store)) return;
+  delete store[lookup];
+  await writeFileStore(store);
+}
+
 /** Persist a successful OTP send attempt for rate limiting. */
 export async function recordOtpRequest(phoneE164: string): Promise<void> {
   try {

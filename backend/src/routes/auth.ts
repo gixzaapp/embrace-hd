@@ -10,6 +10,7 @@ import { generateOtpCode, saveOtp, verifyOtp } from '../services/otpStore.js';
 import { assertCanRequestOtp, recordOtpRequest } from '../services/otpRateLimit.js';
 import { createSession, revokeSession } from '../services/sessionStore.js';
 import {
+  deleteAccount,
   ensureUser,
   findUserByPhone,
   normalizePhoneE164,
@@ -195,6 +196,18 @@ authRouter.post('/logout', requireAuth, async (req: AuthedRequest, res, next) =>
     if (req.authToken) {
       await revokeSession(req.authToken);
     }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.delete('/account', requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    if (!req.authUser) {
+      throw new HttpError(401, 'Unauthorized');
+    }
+    await deleteAccount(req.authUser);
     res.json({ ok: true });
   } catch (err) {
     next(err);
