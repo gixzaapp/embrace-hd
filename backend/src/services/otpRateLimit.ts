@@ -67,7 +67,7 @@ async function recordTimestamp(phoneLookup: string, atMs: number): Promise<void>
 
 /**
  * Enforce OTP send limits for a phone number (does not write a log row yet).
- * Defaults: max 2 / hour, 60s cooldown.
+ * Defaults: max 5 / hour, 60s cooldown.
  * DB errors soft-fail so login is never blocked by rate-limit storage issues.
  */
 export async function assertCanRequestOtp(phoneE164: string): Promise<void> {

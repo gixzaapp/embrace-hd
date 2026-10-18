@@ -64,7 +64,7 @@ export const env = {
   authOtpTtlSec: Number(process.env.AUTH_OTP_TTL_SEC ?? 300),
   sessionTtlDays: Number(process.env.SESSION_TTL_DAYS ?? 30),
   /** Max OTP send requests per phone within the rate window */
-  authOtpMaxPerWindow: Number(process.env.AUTH_OTP_MAX_PER_WINDOW ?? 2),
+  authOtpMaxPerWindow: Number(process.env.AUTH_OTP_MAX_PER_WINDOW ?? 5),
   /** Rate-limit window in seconds (default 1 hour) */
   authOtpWindowSec: Number(process.env.AUTH_OTP_WINDOW_SEC ?? 3600),
   /** Minimum seconds between OTP requests for the same phone */
