@@ -69,10 +69,17 @@ export const env = {
   authOtpWindowSec: Number(process.env.AUTH_OTP_WINDOW_SEC ?? 3600),
   /** Minimum seconds between OTP requests for the same phone */
   authOtpCooldownSec: Number(process.env.AUTH_OTP_COOLDOWN_SEC ?? 60),
-  /** Return OTP in API JSON when mock / local testing */
-  authAllowOtpHint: process.env.AUTH_ALLOW_OTP_HINT !== 'false',
-  /** Fixed OTP that always verifies (testing only — leave empty to disable) */
+  /** Return OTP in API JSON only when explicitly enabled. Off in production. */
+  authAllowOtpHint: process.env.AUTH_ALLOW_OTP_HINT === 'true',
+  /** Fixed OTP. Accepted only for authTestOtpPhones. Empty disables it. */
   authTestOtp: process.env.AUTH_TEST_OTP?.trim() ?? '',
+  /**
+   * E.164 numbers allowed to use AUTH_TEST_OTP.
+   * Comma-separated. Default is the App Review UK number.
+   */
+  authTestOtpPhones: parsePhoneList(
+    process.env.AUTH_TEST_OTP_PHONES?.trim() || '+447404874582'
+  ),
   nodeEnv: process.env.NODE_ENV?.trim() ?? 'development',
   /** How often (seconds) to log the request-count summary. 0 disables periodic logs. */
   requestLogIntervalSec: Number(process.env.REQUEST_LOG_INTERVAL_SEC ?? 60),
@@ -131,6 +138,13 @@ export const env = {
 };
 
 /** null = do not override DB; boolean = force that value */
+function parsePhoneList(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function parseOptionalBool(raw: string | undefined): boolean | null {
   const v = raw?.trim().toLowerCase();
   if (!v) return null;

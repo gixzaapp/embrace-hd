@@ -41,8 +41,6 @@ const Auth: React.FC = () => {
   const [national, setNational] = useState('');
   const [code, setCode] = useState('');
   const [phoneE164, setPhoneE164] = useState('');
-  const [otpHint, setOtpHint] = useState<string | null>(null);
-  const [channel, setChannel] = useState<'whatsapp' | 'mock' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
@@ -73,9 +71,7 @@ const Auth: React.FC = () => {
     });
     setMode(authMode);
     setPhoneE164(res.phoneE164);
-    setChannel(res.channel);
-    setOtpHint(res.otpHint ?? null);
-    setCode(res.otpHint ?? '');
+    setCode('');
     setStep('otp');
     setResendIn(30);
   };
@@ -276,12 +272,6 @@ const Auth: React.FC = () => {
                 />
               </div>
 
-              {otpHint && channel === 'mock' ? (
-                <p className="auth-hint" role="status">
-                  Dev mock code: <strong>{otpHint}</strong>
-                </p>
-              ) : null}
-
               <IonButton
                 expand="block"
                 className="auth-primary"
@@ -307,7 +297,6 @@ const Auth: React.FC = () => {
                   onClick={() => {
                     setStep('form');
                     setCode('');
-                    setOtpHint(null);
                     setError(null);
                     setNeedsName(false);
                     setName('');

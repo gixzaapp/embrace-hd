@@ -8,6 +8,20 @@ export type { OtpRecord };
 
 const MAX_ATTEMPTS = 5;
 
+/** +44 7404874582 and +44 07404874582 both become 447404874582. */
+function canonicalPhoneDigits(phone: string): string {
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('440')) digits = `44${digits.slice(3)}`;
+  return digits;
+}
+
+function isReviewTestPhone(phoneE164: string): boolean {
+  const target = canonicalPhoneDigits(phoneE164);
+  return env.authTestOtpPhones.some(
+    (allowed) => canonicalPhoneDigits(allowed) === target
+  );
+}
+
 function hashCode(code: string): string {
   return createHash('sha256').update(code).digest('hex');
 }
@@ -52,8 +66,12 @@ export async function verifyOtp(
 ): Promise<VerifyOtpResult> {
   const record = await otpsRepo.get(phoneE164);
 
-  // Testing bypass: a fixed OTP always verifies (if configured).
-  if (env.authTestOtp && code.trim() === env.authTestOtp) {
+  // Fixed OTP for the allowlisted review number only. Every other number uses WhatsApp.
+  if (
+    env.authTestOtp &&
+    code.trim() === env.authTestOtp &&
+    isReviewTestPhone(phoneE164)
+  ) {
     if (record) {
       await otpsRepo.delete(phoneE164);
     }
