@@ -8,7 +8,7 @@ export type { OtpRecord };
 
 const MAX_ATTEMPTS = 5;
 
-/** +44 7404874582 and +44 07404874582 both become 447404874582. */
+/** +44 7733198767 and +44 07733198767 both become 447733198767. */
 function canonicalPhoneDigits(phone: string): string {
   let digits = phone.replace(/\D/g, '');
   if (digits.startsWith('440')) digits = `44${digits.slice(3)}`;

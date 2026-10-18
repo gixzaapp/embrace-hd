@@ -78,7 +78,7 @@ export const env = {
    * Comma-separated. Default is the App Review UK number.
    */
   authTestOtpPhones: parsePhoneList(
-    process.env.AUTH_TEST_OTP_PHONES?.trim() || '+447404874582'
+    process.env.AUTH_TEST_OTP_PHONES?.trim() || '+447733198767'
   ),
   nodeEnv: process.env.NODE_ENV?.trim() ?? 'development',
   /** How often (seconds) to log the request-count summary. 0 disables periodic logs. */
