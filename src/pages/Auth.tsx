@@ -37,7 +37,7 @@ const Auth: React.FC = () => {
   const [needsName, setNeedsName] = useState(false);
   const [mode, setMode] = useState<AuthMode>('login');
   const [name, setName] = useState('');
-  const [country, setCountry] = useState<Country>(() => findCountryByCode('NG'));
+  const [country, setCountry] = useState<Country>(() => findCountryByCode('GB'));
   const [national, setNational] = useState('');
   const [code, setCode] = useState('');
   const [phoneE164, setPhoneE164] = useState('');

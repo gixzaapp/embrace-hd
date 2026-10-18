@@ -17,9 +17,9 @@ export function countryFlagSrc(isoCode: string): string {
  * Flag emojis use regional indicator symbols (work on Android/iOS natively).
  */
 export const COUNTRIES: Country[] = [
+  { code: 'GB', name: 'United Kingdom', dial: '44', flag: '🇬🇧' },
   { code: 'NG', name: 'Nigeria', dial: '234', flag: '🇳🇬' },
   { code: 'IN', name: 'India', dial: '91', flag: '🇮🇳' },
-  { code: 'GB', name: 'United Kingdom', dial: '44', flag: '🇬🇧' },
   { code: 'US', name: 'United States', dial: '1', flag: '🇺🇸' },
   { code: 'GH', name: 'Ghana', dial: '233', flag: '🇬🇭' },
   { code: 'KE', name: 'Kenya', dial: '254', flag: '🇰🇪' },
